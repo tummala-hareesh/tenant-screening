@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tenant Screening</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{--ink:#1C2B39;--paper:#EFEBE3;--raised:#F8F5EF;--red:#9A3324;--green:#3F6B54;--amber:#B8863F;--line:#C9C2B3;--muted:#6b6659;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px;line-height:1.45}
+h1,h2,h3,h4,.brand{font-family:'Source Serif 4',Georgia,serif;margin:0}
+.top{background:var(--ink);color:#F8F5EF;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-size:22px;font-weight:600}.brand em{font-style:normal;color:#D9B77A}
+.layout{display:grid;grid-template-columns:290px 1fr;gap:20px;max-width:1200px;margin:0 auto;padding:20px 16px}
+.layout>*{min-width:0}
+@media(max-width:820px){.layout{grid-template-columns:1fr}.panel{padding:12px}h2{word-break:break-word}}
+.panel{background:var(--raised);border:1px solid var(--line);border-radius:4px;padding:16px;margin-bottom:16px}
+.panel h3{font-size:18px;margin-bottom:4px}
+.sec-no{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.hint{color:var(--muted);font-size:13px;margin:4px 0 10px}
+.field{margin-bottom:10px;flex:1;min-width:140px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+input,select,textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:3px;background:#fff;color:var(--ink)}
+input:disabled,select:disabled,textarea:disabled{background:#ece8de;color:#8a8576}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;border-radius:3px;padding:8px 14px;border:1px solid var(--ink);background:transparent;color:var(--ink)}
+.primary{background:var(--ink);color:#F8F5EF}
+.top a{text-decoration:underline;text-underline-offset:2px}
+.top .primary{background:#D9B77A;color:var(--ink);border-color:#D9B77A;font-weight:600}
+.danger{border-color:var(--red);color:var(--red)}
+.small{padding:4px 9px;font-size:13px}
+.item{padding:10px 12px;border:1px solid var(--line);border-left:4px solid var(--line);background:var(--raised);border-radius:3px;margin-bottom:8px;cursor:pointer}
+.item.active{border-color:var(--ink);border-left-color:var(--ink)}
+.item .t{font-weight:600}.item .m{font-size:12px;color:var(--muted)}
+.chip{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:10px;color:#fff;white-space:nowrap}
+.c-clear,.c-met{background:var(--green)}.c-concern,.c-not_met{background:var(--red)}
+.c-unchecked,.c-incomplete{background:#8a8576}.c-na{background:#9a8a66}.c-review{background:var(--amber)}
+.dim{border:1px solid var(--line);border-radius:4px;background:#fff;padding:12px;margin-bottom:10px}
+.dim-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.dim-h b{font-family:'Source Serif 4',serif;font-size:16px}
+.badge{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-left:6px}
+.consent{background:#F4EEDD;border-radius:3px;padding:6px 10px;margin:8px 0;font-size:13px;display:flex;gap:8px;align-items:center}
+.consent input{width:auto}
+fieldset{border:0;margin:0;padding:0;min-width:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:6px;margin:10px 0}
+.tile{border-radius:3px;color:#fff;padding:8px 6px;font-size:12px;text-align:center;font-weight:600}
+.tile small{display:block;font-weight:400;opacity:.9;font-size:11px}
+.outcome{border-left:6px solid var(--ink);padding:12px 14px;border-radius:3px;background:#fff}
+.o-met{border-color:var(--green)}.o-not_met{border-color:var(--red)}.o-review{border-color:var(--amber)}.o-incomplete{border-color:#8a8576}
+.stamp{display:inline-block;border:2px solid var(--red);color:var(--red);font-family:'IBM Plex Mono',monospace;font-size:12px;padding:3px 8px;transform:rotate(-2deg);letter-spacing:.06em}
+.note{background:#F1E3C4;color:#5c4416;border-radius:3px;padding:8px 10px;font-size:13px;margin:8px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-bottom:2px solid var(--ink);padding:6px}
+td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.tablewrap{overflow-x:auto}
+.doccheck{border:1px dashed var(--ink);border-radius:4px;padding:10px 12px;margin:10px 0;background:#FBF9F4}
+.finding{font-size:13px;margin:5px 0;padding-left:8px;border-left:3px solid var(--line)}
+.f-high{border-left-color:var(--red)}.f-warn{border-left-color:var(--amber)}
+.finding b{font-family:'IBM Plex Mono',monospace;font-size:11px;margin-right:6px;text-transform:uppercase}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:4px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+a{color:var(--ink)}
+@media print{
+  .top,#list,.actions,.noprint,.toast{display:none!important}
+  .layout{display:block;padding:0}body{background:#fff}.panel{border:0;padding:0}
+}
+</style>
+</head>
+<body>
+<div class="top"><div class="brand">Tenant <em>Screening</em></div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="newScreening()">+ New screening</button></div></div>
+<div class="layout"><aside id="list"></aside><main id="main"></main></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======================= CONFIG ======================= */
+const STORE_KEY = 'tenantScreening:v1';
+const REASONS = {
+  credit_below_threshold:'Credit score below the minimum set in the locked criteria',
+  income_insufficient:'Owner assessed that income does not cover the rent',
+  reference_failed:'Reference / rental history check did not pass',
+  reference_missing:'Reference check required by the criteria but not provided',
+  identity_not_verified:'Identity could not be verified',
+  other_documented:'Other (owner-documented justification)'
+};
+const CONSENTS = {
+  credit:'Credit report',
+  reference:'Contacting previous landlords / references',
+  employment:'Contacting employer',
+  public:'Public-records searches (LTB, courts, bankruptcy)',
+  police:'Police record check (obtained by the applicant)'
+};
+const STATUS_LABEL = {unchecked:'Not checked', clear:'Clear', concern:'Concern', na:'Not provided'};
+const OUTCOME_LABEL = {met:'Meets criteria', not_met:'Does not meet criteria', review:'Flagged for owner review', incomplete:'Incomplete'};
+const DIMS = [
+  {key:'identity', short:'ID', name:'Identity verification', req:true, desc:'Sight a government photo ID and confirm the name matches the application.',
+   sources:['Government photo ID sighted in person','ID copy supplied by applicant'], choose:true},
+  {key:'credit', short:'Credit', name:'Credit report', req:true, consent:'credit', desc:'Enter the score from a licensed bureau report. Status is worked out from the minimum you locked.',
+   sources:['Equifax Canada (applicant-supplied)','TransUnion Canada (applicant-supplied)','Equifax / TransUnion direct','FrontLobby','Certn','Other licensed provider'], link:['Equifax Canada','https://www.equifax.ca']},
+  {key:'income', short:'Income', name:'Income and affordability', req:true, desc:'Collected only alongside the credit check (O. Reg. 290/98). Answer yes/no: does income cover the rent? The rent-to-income number is information only and never decides the outcome.',
+   sources:['Recent paystubs','Employment letter','CRA Notice of Assessment','Bank statements']},
+  {key:'employment', short:'Employer', name:'Employment verification', consent:'employment', desc:'Optional. Confirms the employer and role the applicant stated.', sources:['Employer contacted by phone/email','Employment letter']},
+  {key:'references', short:'Refs', name:'Rental history and landlord references', consent:'reference', refDim:true, desc:'Contact current and previous landlords with the same questions for every applicant.',
+   sources:['Current landlord','Previous landlord','Landlord letter']},
+  {key:'ltb', short:'LTB', name:'LTB decisions (public record)', consent:'public', desc:'Look for Landlord and Tenant Board orders against the applicant. A confirmed arrears order is flagged for your review, not an automatic fail, and the applicant should get a chance to respond.',
+   sources:['LTB Open Data Catalogue','CanLII','Tribunals Ontario decisions search'], link:['CanLII','https://www.canlii.org']},
+  {key:'court', short:'Courts', name:'Court records (civil / small claims)', consent:'public', desc:'Search for civil judgments relating to rent or property.',
+   sources:['Ontario Courts Public Portal (Toronto region)','Justice Services Online (elsewhere in Ontario)','CanLII'], link:['Ontario Courts Public Portal','https://courts.ontario.ca/portal/home']},
+  {key:'bankruptcy', short:'Bankr.', name:'Bankruptcy and insolvency', consent:'public', desc:'Check the federal insolvency record. A small fee applies on the government search.',
+   sources:['OSB Bankruptcy and Insolvency search','Credit report public-records section'], link:['OSB records search (min. $8)','https://ised-isde.canada.ca/site/office-superintendent-bankruptcy/en/bankruptcy-and-insolvency-records-search/bankruptcy-and-insolvency-records-search']},
+  {key:'police', short:'Police', name:'Police record check (applicant-supplied)', consent:'police', desc:'Optional. Only a check the applicant obtains and shares themselves, with written consent. Apply the same rule to every applicant.',
+   sources:['Applicant-obtained police record check']}
+];
+
+/* ======================= STATE ======================= */
+let data = { screenings:[] };
+let ui = { view:'home', id:null, confirmDelete:null };
+function uid(){ return Math.random().toString(36).slice(2,10); }
+function nowISO(){ return new Date().toISOString(); }
+function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDate(iso){ if(!iso) return '-'; const d=new Date(iso.length===10?iso+'T12:00:00':iso); return d.toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'}); }
+function fmtDT(iso){ if(!iso) return '-'; const d=new Date(iso); return fmtDate(iso)+' '+d.toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'}); }
+function money(n){ return '$'+Number(n||0).toLocaleString('en-CA',{minimumFractionDigits:0,maximumFractionDigits:2}); }
+function load(){ try{ const v=localStorage.getItem(STORE_KEY); if(v) data=JSON.parse(v); }catch(e){} }
+function save(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }catch(e){ toast('Could not save in this browser'); } }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._h); toast._h=setTimeout(()=>t.classList.remove('show'),2200); }
+function cur(){ return data.screenings.find(s=>s.id===ui.id); }
+
+function blankScreening(){
+  return { id:uid(), createdAt:nowISO(), updatedAt:nowISO(),
+    applicant:{name:'',email:'',phone:'',address:''},
+    rental:{property:'',rent:'',moveIn:''},
+    criteria:{minCredit:'',refRequired:true,lockedAt:null},
+    consents:{}, checks:{}, credit:{score:''}, income:{monthly:'',sufficient:''},
+    override:{outcome:'',justification:''}, applicantResponse:'', docCheck:null, sourceVerified:{method:'',date:'',steps:[]}, attestation:{given:false,at:null}, source:null, sentAt:null, ackAt:null, downloadedAt:null };
+}
+function newScreening(){ const s=blankScreening(); data.screenings.unshift(s); save(); ui={view:'edit',id:s.id,confirmDelete:null}; render(); }
+function sampleScreening(){
+  const s=blankScreening();
+  s.applicant={name:'Sample Applicant',email:'sample@example.com',phone:'416-555-0100',address:'12 Example St, Mississauga ON'};
+  s.rental={property:'45 Demo Ave, Unit 2, Toronto ON',rent:'2100',moveIn:''};
+  s.criteria={minCredit:650,refRequired:true,lockedAt:nowISO()};
+  ['credit','reference','public','employment'].forEach(k=>s.consents[k]={given:true,at:nowISO()});
+  const t=todayISO();
+  s.checks={identity:{status:'clear',source:'Government photo ID sighted in person',date:t,note:'Ontario driver licence, name matches.'},
+    employment:{status:'clear',source:'Employment letter',date:t,note:'Employed 3 years.'},
+    references:{status:'clear',source:'Previous landlord',date:t,note:'Rent paid on time, no complaints.'},
+    ltb:{status:'clear',source:'LTB Open Data Catalogue',date:t,note:'No orders found.'},
+    court:{status:'clear',source:'Ontario Courts Public Portal (Toronto region)',date:t,note:''},
+    bankruptcy:{status:'clear',source:'OSB Bankruptcy and Insolvency search',date:t,note:''}};
+  s.credit={score:'702'}; s.income={monthly:'6400',sufficient:'yes'};
+  data.screenings.unshift(s); save(); ui={view:'edit',id:s.id,confirmDelete:null}; render();
+}
+function setPath(obj,path,val){ const p=path.split('.'); let o=obj; for(let i=0;i<p.length-1;i++){ if(o[p[i]]==null) o[p[i]]={}; o=o[p[i]]; } o[p[p.length-1]]=val; }
+function setv(path,val){ const s=cur(); if(!s) return; setPath(s,path,val); s.updatedAt=nowISO(); save(); refreshLive(); }
+function setvR(path,val){
+  const s=cur(); if(!s) return; setPath(s,path,val);
+  const m=path.match(/^checks\.(\w+)\.status$/); if(m && val!=='unchecked' && !(s.checks[m[1]].date)) s.checks[m[1]].date=todayISO();
+  s.updatedAt=nowISO(); save(); render();
+}
+function toggleConsent(type,on){ const s=cur(); s.consents[type]= on?{given:true,at:nowISO()}:{given:false,at:null}; s.updatedAt=nowISO(); save(); render(); }
+function lockCriteria(){
+  const s=cur(); const mc=parseInt(s.criteria.minCredit,10);
+  if(!(mc>=300 && mc<=900)){ toast('Enter a minimum credit score between 300 and 900'); return; }
+  if(!s.applicant.name.trim()){ toast('Enter the applicant name first'); return; }
+  s.criteria.minCredit=mc; s.criteria.lockedAt=nowISO(); s.updatedAt=nowISO(); save(); render(); toast('Criteria locked');
+}
+function duplicateScreening(){
+  const s=cur(); const n=blankScreening(); n.applicant=JSON.parse(JSON.stringify(s.applicant)); n.rental=JSON.parse(JSON.stringify(s.rental));
+  data.screenings.unshift(n); save(); ui={view:'edit',id:n.id,confirmDelete:null}; render(); toast('New screening created with the same details');
+}
+function removeScreening(id){
+  if(ui.confirmDelete!==id){ ui.confirmDelete=id; render(); return; }
+  data.screenings=data.screenings.filter(s=>s.id!==id); save(); ui={view:'home',id:null,confirmDelete:null}; render(); toast('Deleted');
+}
+function openScreening(id){ ui={view:'edit',id,confirmDelete:null}; render(); }
+
+/* ======================= EVALUATION ======================= */
+function dimStatus(s,key){
+  if(key==='credit'){ if(s.credit.score===''||s.credit.score==null||!s.criteria.lockedAt) return 'unchecked'; return Number(s.credit.score)>=Number(s.criteria.minCredit)?'clear':'concern'; }
+  if(key==='income'){ return s.income.sufficient==='yes'?'clear':s.income.sufficient==='no'?'concern':'unchecked'; }
+  return (s.checks[key]&&s.checks[key].status)||'unchecked';
+}
+function consentOK(s,d){ return !d.consent || (s.consents[d.consent]&&s.consents[d.consent].given); }
+function r2i(s){ const r=Number(s.rental.rent), i=Number(s.income.monthly); return (r>0&&i>0)?Math.round(r/i*100):null; }
+function evaluate(s){
+  const reasons=[], flags=[], missing=[];
+  const st=k=>dimStatus(s,k);
+  if(!s.criteria.lockedAt) missing.push('Criteria not locked yet');
+  if(st('identity')==='unchecked') missing.push('Identity verification'); else if(st('identity')!=='clear') reasons.push('identity_not_verified');
+  if(st('credit')==='unchecked') missing.push('Credit report'); else if(st('credit')==='concern') reasons.push('credit_below_threshold');
+  if(st('income')==='unchecked') missing.push('Income and affordability'); else if(st('income')==='concern') reasons.push('income_insufficient');
+  const rs=st('references');
+  if(s.criteria.refRequired){
+    if(rs==='unchecked') missing.push('Rental history and landlord references');
+    else if(rs==='na') reasons.push('reference_missing');
+    else if(rs==='concern') reasons.push('reference_failed');
+  } else if(rs==='concern') flags.push('Rental history and landlord references');
+  DIMS.forEach(d=>{ if(['employment','ltb','court','bankruptcy','police'].includes(d.key) && st(d.key)==='concern') flags.push(d.name); });
+  if(s.docCheck && ['warn','high','unassessable'].includes(s.docCheck.tier) && !isSourceVerified(s)) flags.push('Credit report authenticity not confirmed');
+  if(s.docCheck && !(s.attestation&&s.attestation.given)) flags.push('Applicant attestation for the credit report not recorded');
+  let computed = missing.length?'incomplete':(reasons.length?'not_met':(flags.length?'review':'met'));
+  const ov=s.override||{};
+  const overridden = !!(ov.outcome && (ov.justification||'').trim().length>=10 && computed!=='incomplete');
+  const final = overridden ? ov.outcome : computed;
+  return {computed, final, overridden, reasons, flags, missing};
+}
+
+/* ======================= UI: LIST ======================= */
+function chip(status){ return `<span class="chip c-${status}">${STATUS_LABEL[status]||OUTCOME_LABEL[status]||status}</span>`; }
+function outChip(o){ return `<span class="chip c-${o}">${OUTCOME_LABEL[o]}</span>`; }
+function renderList(){
+  const el=document.getElementById('list');
+  el.innerHTML = `<div class="sec-no" style="margin-bottom:8px">Saved screenings</div>` +
+    (data.screenings.length? data.screenings.map(s=>{ const e=evaluate(s);
+      return `<div class="item ${s.id===ui.id?'active':''}" onclick="openScreening('${s.id}')"><div class="t">${esc(s.applicant.name||'Unnamed applicant')}</div><div class="m">${esc(s.rental.property||'No property entered')}</div><div style="margin-top:5px">${outChip(e.final)}</div></div>`;
+    }).join('') : `<p class="hint">Nothing yet.</p>`);
+}
+
+/* ======================= UI: EDITOR ======================= */
+function inp(path,label,type,val,extra){ return `<div class="field"><label>${label}</label><input type="${type||'text'}" value="${esc(val)}" ${extra||''} onchange="setv('${path}',this.value)"></div>`; }
+function renderMain(){
+  const el=document.getElementById('main');
+  if(ui.view==='home'||!cur()){
+    el.innerHTML = `<div class="panel"><h3>Screen a tenant, get a PDF report</h3>
+      <p class="hint">Add the applicant, lock your criteria, record each check (with the applicant's consent where needed), and download a report. Everything is stored only in this browser.</p>
+      <div class="actions"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="sampleScreening()">Try a sample applicant</button></div></div>`;
+    return;
+  }
+  if(ui.view==='report'){ renderReport(el); return; }
+  renderEditor(el);
+}
+function renderEditor(el){
+  const s=cur(); const locked=!!s.criteria.lockedAt;
+  el.innerHTML = `
+  <div class="actions noprint"><button class="small" onclick="duplicateScreening()">Duplicate details into new screening</button>
+    <button class="small danger" onclick="removeScreening('${s.id}')">${ui.confirmDelete===s.id?'Click again to delete':'Delete'}</button></div>
+
+  <div class="panel"><div class="sec-no">1 · Applicant and rental</div><h3>Who and what</h3>
+    <div class="row">${inp('applicant.name','Full name','text',s.applicant.name)}${inp('applicant.email','Email','email',s.applicant.email)}${inp('applicant.phone','Phone','tel',s.applicant.phone)}</div>
+    ${inp('applicant.address','Current address','text',s.applicant.address)}
+    <div class="row">${inp('rental.property','Rental property / unit','text',s.rental.property)}${inp('rental.rent','Asking monthly rent ($)','number',s.rental.rent,'min="0" step="0.01"')}${inp('rental.moveIn','Intended move-in','date',s.rental.moveIn)}</div>
+    <p class="hint">Do not record anything about protected grounds (age, family status, disability, source of income, etc.).</p></div>
+
+  <div class="panel"><div class="sec-no">2 · Criteria</div><h3>Set before any check</h3>
+    <p class="hint">Written down and locked before checks begin, so every applicant is measured against the same standard. After locking they cannot be changed; start a duplicate screening for different criteria.</p>
+    ${locked?`<span class="stamp">LOCKED ${esc(fmtDT(s.criteria.lockedAt))}</span>
+      <p style="margin:10px 0 0">Minimum credit score: <b>${esc(s.criteria.minCredit)}</b> · References required: <b>${s.criteria.refRequired?'Yes':'No'}</b></p>${s.source?`<p class="hint">Locked in Rent Roll (criteria v${esc(s.source.criteriaVersion)}) before this applicant was invited. They cannot be changed here.</p>`:''}`:
+    `<div class="row">${inp('criteria.minCredit','Minimum credit score','number',s.criteria.minCredit,'min="300" max="900"')}
+      <div class="field"><label>References required</label><select onchange="setv('criteria.refRequired',this.value==='yes')"><option value="yes" ${s.criteria.refRequired?'selected':''}>Yes</option><option value="no" ${!s.criteria.refRequired?'selected':''}>No</option></select></div></div>
+     <button class="primary" onclick="lockCriteria()">Lock criteria</button>`}
+  </div>
+
+  <div class="panel"><div class="sec-no">3 · Checks</div><h3>Nine dimensions</h3>
+    <p class="hint">${locked?'Record each check. Tick the consent first where one is needed.':'Lock the criteria above to unlock the checks.'}</p>
+    <fieldset ${locked?'':'disabled'}>${DIMS.map(d=>dimCard(s,d)).join('')}</fieldset></div>
+
+  <div class="panel"><div class="sec-no">4 · Result</div><h3>Outcome</h3><div id="outcome"></div></div>
+  ${rrPanelHtml(s)}
+  <div class="actions noprint"><button class="primary" onclick="ui.view='report';render()">View report and download PDF</button></div>`;
+  refreshLive();
+}
+function dimCard(s,d){
+  const ck=s.checks[d.key]||{}; const ok=consentOK(s,d);
+  let body='';
+  if(!ok){ body=''; }
+  else if(d.key==='credit'){
+    body=`<div class="row">${inp('credit.score','Credit score','number',s.credit.score,'min="300" max="900"')}</div>`+docCheckHtml(s);
+  } else if(d.key==='income'){
+    body=`<div class="row">${inp('income.monthly','Verified monthly income ($)','number',s.income.monthly,'min="0" oninput="liveR2I()"')}
+      <div class="field"><label>Does income cover the rent?</label><select onchange="setvR('income.sufficient',this.value)"><option value="">Select…</option><option value="yes" ${s.income.sufficient==='yes'?'selected':''}>Yes</option><option value="no" ${s.income.sufficient==='no'?'selected':''}>No</option></select></div></div>
+      <p class="hint">Rent-to-income (information only, never a cut-off): <b id="r2i"></b></p>`;
+  }
+  let common='';
+  if(ok && d.key!=='credit' && d.key!=='income'){
+    common=`<div class="row"><div class="field"><label>Result</label><select onchange="setvR('checks.${d.key}.status',this.value)">
+      ${['unchecked','clear','concern','na'].map(v=>`<option value="${v}" ${(ck.status||'unchecked')===v?'selected':''}>${STATUS_LABEL[v]}</option>`).join('')}</select></div></div>`;
+  }
+  const srcRow = ok ? `<div class="row"><div class="field"><label>Source used</label><input list="src-${d.key}" value="${esc(ck.source)}" onchange="setv('checks.${d.key}.source',this.value)"><datalist id="src-${d.key}">${d.sources.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>
+    ${inp('checks.'+d.key+'.date','Date checked','date',ck.date)}</div>
+    <div class="field"><label>Note (facts only)</label><textarea rows="2" onchange="setv('checks.${d.key}.note',this.value)">${esc(ck.note)}</textarea></div>` : '';
+  return `<div class="dim"><div class="dim-h"><div><b>${d.name}</b>${d.req?'<span class="badge">required</span>':(d.refDim?'<span class="badge">per criteria</span>':'<span class="badge">optional</span>')}</div><span data-chip="${d.key}"></span></div>
+    <p class="hint" style="margin:4px 0">${d.desc}${d.link?` <a href="${d.link[1]}" target="_blank" rel="noopener">${d.link[0]} ↗</a>`:''}</p>
+    ${d.consent?`<label class="consent"><input type="checkbox" ${ok?'checked':''} onchange="toggleConsent('${d.consent}',this.checked)"> Applicant consent: ${CONSENTS[d.consent]}${ok&&s.consents[d.consent]?` <span class="badge">${esc(fmtDT(s.consents[d.consent].at))}</span>`:''}</label>`:''}
+    ${ok?'':'<div class="note">Awaiting consent. This check cannot be recorded without it.</div>'}
+    ${d.key==='ltb'&&ok?ltbPanelHtml(s):''}${body}${common}${srcRow}</div>`;
+}
+function liveR2I(){ const s=cur(); const el=document.getElementById('r2i'); if(!el) return; const inp=document.querySelector('input[onchange*="income.monthly"]'); const i=Number(inp.value), r=Number(s.rental.rent); el.textContent=(r>0&&i>0)?Math.round(r/i*100)+'%':'enter rent and income'; }
+function refreshLive(){
+  const s=cur(); if(!s) return;
+  document.querySelectorAll('[data-chip]').forEach(n=>{ n.innerHTML=chip(dimStatus(s,n.dataset.chip)); });
+  const r=document.getElementById('r2i'); if(r){ const v=r2i(s); r.textContent=v==null?'enter rent and income':v+'%'; }
+  const o=document.getElementById('outcome'); if(o) o.innerHTML=outcomeHtml(s);
+  renderList();
+}
+function outcomeHtml(s){
+  const e=evaluate(s);
+  const tiles=DIMS.map(d=>{ const st=dimStatus(s,d.key); return `<div class="tile c-${st}">${d.short}<small>${STATUS_LABEL[st]}</small></div>`; }).join('');
+  let h=`<div class="tiles">${tiles}</div><div class="outcome o-${e.final}"><div style="font-size:12px;color:var(--muted)">${e.overridden?'Owner decision (override of computed result)':'Computed against locked criteria'}</div>
+    <div style="font-family:'Source Serif 4',serif;font-size:22px;font-weight:600">${OUTCOME_LABEL[e.final]}</div>`;
+  if(e.missing.length) h+=`<p style="margin:6px 0 0">Still needed: ${e.missing.map(esc).join(', ')}</p>`;
+  if(e.reasons.length) h+=`<ul style="margin:6px 0 0;padding-left:18px">${e.reasons.map(c=>`<li>${REASONS[c]}</li>`).join('')}</ul>`;
+  if(e.flags.length) h+=`<p style="margin:6px 0 0">Concerns to review: ${e.flags.map(esc).join(', ')}</p>`;
+  h+=`</div>`;
+  if(e.computed!=='incomplete'){
+    const ov=s.override;
+    h+=`<div style="margin-top:12px"><div class="field"><label>Owner decision</label><select onchange="setvR('override.outcome',this.value)"><option value="">Accept computed result</option><option value="met" ${ov.outcome==='met'?'selected':''}>Override: meets criteria</option><option value="not_met" ${ov.outcome==='not_met'?'selected':''}>Override: does not meet criteria</option></select></div>`;
+    if(ov.outcome) h+=`<div class="field"><label>Justification (required, minimum 10 characters; facts only)</label><textarea rows="2" onchange="setv('override.justification',this.value)">${esc(ov.justification)}</textarea></div>${e.overridden?'':'<div class="note">The override only takes effect once a justification is entered.</div>'}`;
+    if(e.flags.length||e.reasons.length) h+=`<div class="field"><label>Applicant's response to concerns (offer one before deciding)</label><textarea rows="2" onchange="setv('applicantResponse',this.value)">${esc(s.applicantResponse)}</textarea></div>`;
+    h+=`</div>`;
+  }
+  return h;
+}
+
+/* ======================= DOCUMENT AUTHENTICITY CHECK ======================= */
+/* Heuristics only. They look for common signs of editing. They can never prove a report is genuine. */
+const TIER_LABEL = {clean:'No tampering signs found', warn:'Needs verification', high:'Signs of editing', unassessable:'Cannot assess'};
+const TIER_CLASS = {clean:'c-clear', warn:'c-review', high:'c-concern', unassessable:'c-unchecked'};
+const LEVEL_LABEL = {high:'High', warn:'Check', info:'Note'};
+const EDIT_TOOLS = /photoshop|illustrator|acrobat pro|acrobat\s*(?:\d|dc|x)|canva|sejda|ilovepdf|smallpdf|pdfescape|pdf-?xchange|foxit|nitro|pdffiller|pdfelement|wondershare|master ?pdf|soda ?pdf|gimp|inkscape|affinity|pdf24|pdfcandy|docfly|lightpdf/i;
+const DESIGN_TOOLS = /microsoft.{0,12}word|libreoffice|openoffice|writer|apple pages|google docs/i;
+const PRINT_TOOLS = /skia\/pdf|quartz pdfcontext|microsoft: print to pdf|print to pdf|chrome|webkit/i;
+const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+function parsePdfDate(v){ const m=/^D:(\d{4})(\d\d)?(\d\d)?(\d\d)?(\d\d)?(\d\d)?/.exec(String(v||'')); if(!m) return null; return new Date(Date.UTC(+m[1],(+m[2]||1)-1,+m[3]||1,+m[4]||0,+m[5]||0,+m[6]||0)); }
+function extractDates(text){
+  const out=[]; let m;
+  const r1=/\b(20\d\d)[-\/](0?[1-9]|1[0-2])[-\/](0?[1-9]|[12]\d|3[01])\b/g;
+  while((m=r1.exec(text))) out.push(new Date(Date.UTC(+m[1],+m[2]-1,+m[3])));
+  const r2=/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d\d)\b/gi;
+  while((m=r2.exec(text))) out.push(new Date(Date.UTC(+m[3],MONTHS[m[1].toLowerCase()],+m[2])));
+  const r3=/\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(20\d\d)\b/gi;
+  while((m=r3.exec(text))) out.push(new Date(Date.UTC(+m[3],MONTHS[m[2].toLowerCase()],+m[1])));
+  return out;
+}
+function analyzePdf(inp){
+  const f=[]; const add=(level,code,title,detail)=>f.push({level,code,title,detail});
+  const now = inp.now ? new Date(inp.now) : new Date();
+  if(!inp.isPdf){
+    add('warn','not_pdf','Not a PDF','Photos and screenshots cannot be checked for editing here. Ask for the original PDF, or pull the report yourself.');
+    return {tier:'unassessable', findings:f, producer:'', creator:'', updates:0};
+  }
+  const str = new TextDecoder('latin1').decode(inp.bytes);
+  const eof=(str.match(/%%EOF/g)||[]).length; const lin=/\/Linearized/.test(str);
+  const updates=Math.max(0,eof-1-(lin?1:0));
+  const info=(inp.meta&&inp.meta.info)||{}; const xmp=(inp.meta&&inp.meta.xmp)||{};
+  const producer=String(info.Producer||xmp['pdf:producer']||''); const creator=String(info.Creator||xmp['xmp:creatortool']||'');
+  const cd=parsePdfDate(info.CreationDate), md=parsePdfDate(info.ModDate);
+  const toolText=producer+' '+creator;
+  const gap = (cd&&md) ? (md-cd) : 0;
+  if(producer||creator||cd||md){
+    add('info','metadata','File details', 'Producer: '+(producer||'none')+'. Creator: '+(creator||'none')+'. Created: '+(cd?cd.toISOString().slice(0,16).replace('T',' ')+' UTC':'unknown')+'. Modified: '+(md?md.toISOString().slice(0,16).replace('T',' ')+' UTC':'unknown')+'. Compare with a report you pull yourself.');
+  } else add('warn','no_metadata','No producer or date metadata','Some tools strip this, which removes one way of checking the file.');
+  if(updates>0) add('warn','incremental','Appended revisions found', updates+' later revision(s) are stacked on the original. Editors often save changes this way. Legitimate steps like signing or form-filling do too.');
+  if(gap>120000) add('warn','mod_after_create','Modified after it was created','The modified time is '+Math.round(gap/60000)+' minutes after creation.');
+  if(EDIT_TOOLS.test(toolText)) add((updates>0||gap>120000)?'high':'warn','editor_tool','Saved by an editing tool','The file names a PDF/graphics editor ('+(toolText.match(EDIT_TOOLS)[0])+'). A bureau report is normally generated by a server, not edited by hand.');
+  else if(DESIGN_TOOLS.test(toolText)) add('warn','design_tool','Created in a word processor or design tool','Bureau reports are not normally produced this way.');
+  else if(PRINT_TOOLS.test(toolText)) add('info','print_tool','Saved from a browser or printed to PDF','Common when an applicant saves their online report. The content could still have been altered before saving.');
+  if(!inp.textOk) add('warn','parse_failed','Could not read the document text','Content checks were skipped. Metadata checks above still apply.');
+  const hasText = inp.textOk && inp.hasText;
+  if(inp.textOk && !hasText) add('warn','no_text','No text layer (scan or screenshot)','Edits to pixels cannot be detected here. Ask for the original PDF or pull the report yourself.');
+  if(hasText){
+    const items=inp.items; const text=items.map(i=>i.str).join(' ');
+    const low=text.toLowerCase();
+    if(/equifax|transunion/i.test(text)) add('info','bureau','Names a credit bureau', (/equifax/i.test(text)?'Equifax':'TransUnion')+' appears in the text.');
+    else add('warn','no_bureau','No bureau name in the text','Equifax or TransUnion is not mentioned anywhere.');
+    const toks=String(inp.name||'').toLowerCase().split(/[^a-zÀ-ÿ]+/).filter(t=>t.length>=2);
+    if(toks.length && !toks.every(t=>low.includes(t))) add('warn','name_mismatch','Applicant name not found','Not every part of "'+inp.name+'" appears in the document.');
+    const kw=['score','inquir','account','trade','balance','payment','collection','credit'].filter(k=>low.includes(k)).length;
+    if(kw<4) add('warn','few_keywords','Does not look like a full credit report','Only '+kw+' of 8 expected terms appear.');
+    const score=String(inp.score||'').trim();
+    if(score){
+      const rx=new RegExp('(^|[^0-9])'+score+'([^0-9]|$)');
+      const near=[]; let m; const r=/score[^0-9]{0,40}(\d{3})(?!\d)/gi;
+      while((m=r.exec(text))){ const n=+m[1]; if(n>=300&&n<=900) near.push(String(n)); }
+      if(near.length && !near.includes(score)) add('high','score_differs','Document shows a different score','The text near "score" reads '+[...new Set(near)].join(', ')+', not '+score+'.');
+      else if(!rx.test(text)) add('warn','score_missing','Score not found as text','The entered score does not appear in the text layer. It may be drawn as an image, which is one way scores get altered.');
+      else add('info','score_found','Entered score appears in the document','Found '+score+' in the text.');
+      // font mismatch for body-sized score text
+      const chars={}; items.forEach(i=>{ chars[i.fontName]=(chars[i.fontName]||0)+i.str.length; });
+      const fonts=Object.keys(chars); const body=fonts.sort((a,b)=>chars[b]-chars[a])[0];
+      const hs=items.filter(i=>i.fontName===body&&i.height).map(i=>i.height).sort((a,b)=>a-b); const med=hs.length?hs[Math.floor(hs.length/2)]:0;
+      const sItems=items.filter(i=>rx.test(i.str));
+      if(fonts.length>=2 && med && sItems.some(i=>i.fontName!==body && Math.abs(i.height-med)/med<0.2))
+        add('warn','score_font','Score uses a different font from the body text','The score is the same size as the body text but a different font, which can mean it was retyped. Large display fonts for the score are normal.');
+    }
+    const dates=extractDates(text).filter(d=>d.getUTCFullYear()>=2000);
+    if(dates.length){
+      const newest=new Date(Math.max.apply(null,dates.map(d=>+d)));
+      const age=Math.round((now-newest)/86400000);
+      if(age<-1) add('warn','future_date','A date in the document is in the future', newest.toISOString().slice(0,10)+'.');
+      else if(age>30) add('warn','stale','Report is older than 30 days','The newest date found is '+newest.toISOString().slice(0,10)+' ('+age+' days ago). Ask for a current copy.');
+      else add('info','date_ok','Recent date found', 'Newest date '+newest.toISOString().slice(0,10)+'.');
+    } else add('info','no_date','No readable date found','Could not find a report date in the text.');
+  }
+  let tier = (inp.textOk && !hasText) ? 'unassessable' : (f.some(x=>x.level==='high')?'high':(f.some(x=>x.level==='warn')?'warn':'clean'));
+  return {tier, findings:f, producer, creator, updates};
+}
+let _pdfLib=null;
+async function ensurePdfJs(){
+  if(_pdfLib) return _pdfLib;
+  const lib=window.pdfjsLib; if(!lib) throw new Error('pdf.js not loaded');
+  const url='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  try{ const t=await (await fetch(url)).text(); lib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob([t],{type:'text/javascript'})); }
+  catch(e){ lib.GlobalWorkerOptions.workerSrc=url; }
+  _pdfLib=lib; return lib;
+}
+async function runDocCheck(file){
+  const s=cur(); if(!file||!s) return;
+  toast('Checking file...');
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  let hash=''; try{ const h=await crypto.subtle.digest('SHA-256',bytes); hash=[...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join(''); }catch(e){}
+  const isPdf=String.fromCharCode.apply(null,bytes.slice(0,5))==='%PDF-';
+  const meta={info:{},xmp:{}}; let items=[], hasText=false, textOk=false;
+  if(isPdf){
+    try{
+      const lib=await ensurePdfJs(); const doc=await lib.getDocument({data:bytes.slice()}).promise;
+      try{ const md=await doc.getMetadata(); meta.info=md.info||{}; if(md.metadata){ ['xmp:creatortool','xmp:modifydate','xmp:createdate','pdf:producer'].forEach(k=>{ try{ const v=md.metadata.get(k); if(v) meta.xmp[k]=v; }catch(e){} }); } }catch(e){}
+      for(let p=1;p<=Math.min(doc.numPages,10);p++){ const tc=await (await doc.getPage(p)).getTextContent(); tc.items.forEach(i=>items.push({str:i.str,fontName:i.fontName,height:i.height})); }
+      hasText=items.some(i=>i.str.trim().length>0); textOk=true;
+    }catch(e){ textOk=false; }
+  }
+  const res=analyzePdf({bytes,isPdf,meta,items,hasText,textOk,name:s.applicant.name,score:s.credit.score});
+  s.docCheck=Object.assign({fileName:file.name,size:file.size,sha256:hash,checkedAt:nowISO()},res);
+  s.updatedAt=nowISO(); save(); render(); toast('Check complete');
+}
+const VERIFY_METHODS=['Pulled the report myself through a bureau or screening provider','Applicant logged in to their bureau account and showed me live','Other (explain in the note)'];
+const LIVE_STEPS=['The applicant logged in themselves; I never handled their password','The name on the account matches the ID I sighted','The report on screen is dated within the last 30 days','The score on screen matches the score I entered','The accounts and inquiries on screen match the uploaded PDF'];
+function isSourceVerified(s){ const sv=s.sourceVerified||{}; if(!sv.method) return false; if(sv.method===VERIFY_METHODS[1]) return LIVE_STEPS.every((_,i)=>sv.steps&&sv.steps[i]); return true; }
+function setSourceVerified(v){ const s=cur(); const old=s.sourceVerified||{}; s.sourceVerified={method:v,date:v?(old.date||todayISO()):'',steps:old.steps||[]}; s.updatedAt=nowISO(); save(); render(); }
+function toggleStep(i,on){ const s=cur(); s.sourceVerified=s.sourceVerified||{method:'',date:'',steps:[]}; s.sourceVerified.steps=s.sourceVerified.steps||[]; s.sourceVerified.steps[i]=!!on; s.updatedAt=nowISO(); save(); render(); }
+function setAttestation(on){ const s=cur(); s.attestation=on?{given:true,at:nowISO()}:{given:false,at:null}; s.updatedAt=nowISO(); save(); render(); }
+function stepsHtml(s){
+  const sv=s.sourceVerified||{}; if(sv.method!==VERIFY_METHODS[1]) return '';
+  const st=sv.steps||[]; const done=LIVE_STEPS.filter((_,i)=>st[i]).length;
+  return `<div class="consent" style="display:block"><b>Live verification checklist (${done} of ${LIVE_STEPS.length})</b>${LIVE_STEPS.map((t,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin-top:6px"><input type="checkbox" style="width:auto;margin-top:3px" ${st[i]?'checked':''} onchange="toggleStep(${i},this.checked)"> ${t}</label>`).join('')}<div class="hint" style="margin:6px 0 0">Verification counts only when every step is ticked.</div></div>`;
+}
+function verifyLine(m){
+  if(m.verified) return 'Verified at the source: '+m.sourceVerified.method+' ('+fmtDate(m.sourceVerified.date)+').';
+  if(m.sourceVerified.method) return 'Verification started but incomplete ('+m.stepsDone+' of '+m.stepsTotal+' steps).';
+  return 'Not verified at the source.';
+}
+function attestLine(m){ return m.attestation.given ? 'Applicant attestation recorded '+fmtDT(m.attestation.at)+': report is unaltered, obtained directly from Equifax or TransUnion, and dated within the last 30 days.' : 'Applicant attestation not recorded.'; }
+function findingsHtml(list){ return list.map(x=>`<div class="finding f-${x.level}"><b>${LEVEL_LABEL[x.level]}</b>${esc(x.title)}. <span style="color:var(--muted)">${esc(x.detail)}</span></div>`).join(''); }
+function docCheckHtml(s){
+  const d=s.docCheck; const sv=s.sourceVerified||{};
+  return `<div class="doccheck"><b>Authenticity check (optional)</b>
+    <p class="hint">Upload the applicant's credit report PDF. It is analysed in your browser and not uploaded anywhere. Only the file name, a SHA-256 fingerprint and the findings are saved. This looks for signs of editing. It cannot prove a report is genuine.</p>
+    <label class="consent"><input type="checkbox" ${(s.attestation&&s.attestation.given)?'checked':''} onchange="setAttestation(this.checked)"> Applicant attests the report is unaltered, was obtained directly from Equifax or TransUnion, and is dated within the last 30 days.${(s.attestation&&s.attestation.given)?` <span class="badge">${esc(fmtDT(s.attestation.at))}</span>`:''}</label>
+    <input type="file" accept="application/pdf,image/*" onchange="runDocCheck(this.files[0])">
+    ${d?`<div style="margin-top:10px"><span class="chip ${TIER_CLASS[d.tier]}">${TIER_LABEL[d.tier]}</span> <span class="badge">${esc(d.fileName)} · ${esc((d.sha256||'').slice(0,12))} · ${esc(fmtDT(d.checkedAt))}</span>${findingsHtml(d.findings)}</div>`:''}
+    <div class="field" style="margin-top:10px"><label>Verified at the source</label><select onchange="setSourceVerified(this.value)"><option value="">Not verified at the source</option>${VERIFY_METHODS.map(v=>`<option ${sv.method===v?'selected':''}>${v}</option>`).join('')}</select></div>
+    ${stepsHtml(s)}
+    <p class="hint" style="margin:0">Suggested use: run the upload check on everyone, then verify at the source for the finalist you are about to accept. A warning or unconfirmed result flags the screening for your review until you do.</p></div>`;
+}
+
+/* ======================= LTB OPEN DATA (free automatic check) ======================= */
+/* Source: Ontario "LTB Order Catalogue" CSV (Open Government Licence - Ontario). Matching runs in the browser; applicant data is never sent anywhere. */
+const LTB_CSV_URL='https://data.ontario.ca/dataset/2110a7ca-e4ef-493e-b8f1-fbeb70384bc1/resource/86e75d11-1c2c-4cd9-9b0d-9fccec302b30/download/ltb_orders-january_2026-july_2026-cli_ordonnances-janvier_2026-juillet_2026.csv';
+const LTB_PAGE='https://data.ontario.ca/dataset/ltb-order-catalogue';
+const SEARCH_LINKS=[
+  {name:'CanLII: Ontario LTB decisions (older orders)', url:'https://www.canlii.org/on/onltb', note:'Search by hand. CanLII prohibits bulk or programmatic downloading.'},
+  {name:'Ontario Courts Public Portal (Toronto region)', url:'https://courts.ontario.ca/portal/home', note:'Party search for civil and small claims cases. Use only to search; do not save or share its content.'},
+  {name:'Search court cases online (rest of Ontario)', url:'https://ontario.ca/page/search-court-cases-online', note:'Links to Justice Services Online, which needs a My Ontario Account.'},
+  {name:'Bankruptcy and Insolvency Records Search', url:'https://ised-isde.canada.ca/site/office-superintendent-bankruptcy/en/bankruptcy-and-insolvency-records-search/bankruptcy-and-insolvency-records-search', note:'Minimum $8 per search, paid by credit card.'}
+];
+let LTB={meta:null,msg:'',busy:false};
+function parseCsv(text){
+  if(text.charCodeAt(0)===0xFEFF) text=text.slice(1);
+  const rows=[]; let row=[], f='', q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if(c==='"') q=true;
+    else if(c===','){ row.push(f); f=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; row.push(f); f=''; if(row.length>1||row[0]!=='') rows.push(row); row=[]; }
+    else f+=c;
+  }
+  if(f!==''||row.length){ row.push(f); rows.push(row); }
+  return rows;
+}
+function compactLtb(rows){
+  if(!rows.length) throw new Error('The file is empty');
+  const h=rows[0].map(x=>String(x).toLowerCase().trim());
+  const one=p=>h.findIndex(x=>x.startsWith(p));
+  const many=p=>h.map((x,i)=>x.startsWith(p)?i:-1).filter(i=>i>=0);
+  const ix={f:one('file number'),ap:one('applications'),at:one('application type'),ca:one('complex address'),ll:one('landlord name'),t:one('tenant name'),ft:one('former tenant name'),st:one('sub-tenant name'),oc:one('occupant name'),d:one('order date'),dt:one('document type'),u:one('contentdownload url')};
+  const ua=many('rental unit address');
+  if(ix.t<0||ix.at<0||ix.f<0) throw new Error('This does not look like the LTB Order Catalogue file (expected Tenant Name, Application Type and File Number columns).');
+  const g=(r,i)=>i>=0&&r[i]!=null?String(r[i]).trim():'';
+  const recs=[];
+  for(let i=1;i<rows.length;i++){ const r=rows[i];
+    recs.push({f:g(r,ix.f),ap:g(r,ix.ap),at:g(r,ix.at),ua:ua.map(k=>g(r,k)).filter(Boolean).join(' / '),ca:g(r,ix.ca),ll:g(r,ix.ll),t:g(r,ix.t),ft:g(r,ix.ft),st:g(r,ix.st),oc:g(r,ix.oc),d:g(r,ix.d),dt:g(r,ix.dt),u:g(r,ix.u)}); }
+  return recs;
+}
+function idbOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open('tenantScreening',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function idbSet(k,v){ const db=await idbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+async function idbGet(k){ const db=await idbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction('kv','readonly'); const q=tx.objectStore('kv').get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); }
+async function ingestLtb(text,source){
+  const recs=compactLtb(parseCsv(text));
+  const dates=recs.map(r=>r.d).filter(x=>/^\d{4}-\d{2}-\d{2}/.test(x)).map(x=>x.slice(0,10)).sort();
+  const meta={source,loadedAt:nowISO(),rows:recs.length,minDate:dates[0]||'',maxDate:dates[dates.length-1]||''};
+  await idbSet('ltbRecords',recs); await idbSet('ltbMeta',meta); LTB.meta=meta; return meta;
+}
+async function loadLtbUrl(){
+  LTB.busy=true; LTB.msg='Downloading the dataset (about 21 MB)...'; render();
+  try{ const r=await fetch(LTB_CSV_URL); if(!r.ok) throw new Error('HTTP '+r.status); const m=await ingestLtb(await r.text(),'Downloaded from data.ontario.ca'); LTB.msg='Loaded '+m.rows+' orders.'; }
+  catch(e){ LTB.msg='Could not download it from here ('+e.message+'). Download the CSV from the Ontario data catalogue page and choose it with the file picker instead.'; }
+  LTB.busy=false; render();
+}
+async function loadLtbFile(file){
+  if(!file) return; LTB.busy=true; LTB.msg='Reading '+file.name+'...'; render();
+  try{ const m=await ingestLtb(await file.text(),'File: '+file.name); LTB.msg='Loaded '+m.rows+' orders.'; }
+  catch(e){ LTB.msg='Could not use that file: '+e.message; }
+  LTB.busy=false; render();
+}
+async function initLtbMeta(){ try{ LTB.meta=(await idbGet('ltbMeta'))||null; if(LTB.meta) render(); }catch(e){} }
+function normText(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+function nameTokens(s){ return normText(s).replace(/[^a-z\s]/g,' ').split(/\s+/).filter(t=>t.length>=2&&!['jr','sr','ii','iii'].includes(t)); }
+function addrParts(a){ const t=normText(a).replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(Boolean); const num=t.find(x=>/^\d+[a-z]?$/.test(x)); const st=t.find(x=>/^[a-z]{3,}$/.test(x)&&!['unit','apt','suite','street','avenue','road','drive'].includes(x)); return {num,st,tokens:new Set(t)}; }
+function addrMatch(appAddr,recAddrs){ const a=addrParts(appAddr); if(!a.num||!a.st) return false; return recAddrs.some(r=>{ if(!r) return false; const p=addrParts(r); return p.tokens.has(a.num)&&p.tokens.has(a.st); }); }
+function classifyApp(text){
+  const t=String(text||'');
+  const landlord=/\bL\s?-?\d{1,2}\b/i.test(t)||/landlord'?s? application|requ[eê]te du locateur/i.test(t);
+  const tenant=/\bT\s?-?\d{1,2}\b/i.test(t)||/tenant'?s? application|requ[eê]te du locataire/i.test(t);
+  const kind=landlord&&!tenant?'landlord':(tenant&&!landlord?'tenant':'other');
+  return {kind, arrears:/\bL\s?-?(1|9|10)\b/i.test(t)};
+}
+function searchLtb(records,name,address){
+  const t=nameTokens(name); if(t.length<2) return {error:'Enter the applicant\'s first and last name first.'};
+  const first=t[0], last=t[t.length-1]; const out=[];
+  for(const r of records){
+    let role=null;
+    for(const [k,lab] of [['t','Tenant'],['ft','Former tenant'],['st','Sub-tenant'],['oc','Occupant']]){
+      const v=r[k]; if(!v) continue; const nv=normText(v); if(!nv.includes(first)||!nv.includes(last)) continue;
+      const set=new Set(nameTokens(v)); if(set.has(first)&&set.has(last)){ role=lab; break; }
+    }
+    if(!role) continue;
+    const c=classifyApp(r.at+' '+r.ap);
+    out.push({file:r.f,appType:r.at||r.ap,date:r.d,address:r.ua||r.ca,role,addressMatch:addrMatch(address,[r.ua,r.ca]),kind:c.kind,arrears:c.arrears,url:r.u});
+  }
+  return {matches:out};
+}
+function ltbSummary(matches,meta){
+  const cov='LTB Order Catalogue: '+meta.rows+' orders'+(meta.minDate?', '+meta.minDate+' to '+meta.maxDate:'')+'. Older orders are not yet published, so this is not a full history.';
+  const adverse=matches.filter(m=>m.kind!=='tenant');
+  if(!matches.length) return {status:'clear',flagged:false,text:'No match for the applicant\'s name. '+cov};
+  if(!adverse.length) return {status:'clear',flagged:false,text:matches.length+' order(s) found, all from applications the applicant filed as tenant. '+cov};
+  const strong=adverse.filter(m=>m.addressMatch).length, ar=adverse.filter(m=>m.arrears).length;
+  return {status:'concern',flagged:true,text:adverse.length+' landlord application(s) name this applicant'+(ar?' ('+ar+' arrears-type)':'')+(strong?'; '+strong+' also match the applicant\'s address':'; none match the address, so this could be someone with the same name')+'. Confirm against the order itself. '+cov};
+}
+function ltbRecommendation(auto){
+  if(!auto) return null;
+  if(auto.flagged) return {level:'flag',title:'Recommended next steps',steps:[
+    'Open each order PDF and confirm it is the same person. Names and addresses in the file come from the application, not from the decision.',
+    'Tell the applicant what you found and ask for their response before deciding. Record it in the screening.',
+    'Search court records for civil judgments, and the bankruptcy register (links below).',
+    'Ask the previous landlord about the same period.']};
+  return {level:'ok',title:'Recommended next steps',steps:[
+    'No hit in the published orders, but only recent orders are covered. For older history search CanLII (link below) and rely on the landlord reference.',
+    'Court and bankruptcy searches are optional; use the links below if the credit report or references raise questions.']};
+}
+async function runLtbCheck(){
+  const s=cur(); if(!s) return;
+  let recs; try{ recs=await idbGet('ltbRecords'); }catch(e){}
+  if(!recs||!recs.length){ toast('Load the dataset first'); return; }
+  const r=searchLtb(recs,s.applicant.name,s.applicant.address);
+  if(r.error){ toast(r.error); return; }
+  const sum=ltbSummary(r.matches,LTB.meta);
+  s.ltbAuto={ranAt:nowISO(),dataset:Object.assign({},LTB.meta),total:r.matches.length,matches:r.matches.slice(0,25),status:sum.status,flagged:sum.flagged,summary:sum.text};
+  s.checks=s.checks||{}; s.checks.ltb={status:sum.status,source:'LTB Open Data Catalogue (Order Catalogue CSV)',date:todayISO(),note:sum.text};
+  s.updatedAt=nowISO(); save(); render(); toast(sum.flagged?'Flagged: review the matches below':'LTB check complete');
+}
+function searchLinksHtml(){ return `<div style="margin-top:6px">${SEARCH_LINKS.map(l=>`<div class="finding"><a href="${esc(l.url)}" target="_blank" rel="noopener"><b style="text-transform:none;font-family:inherit;font-size:13px">${esc(l.name)} ↗</b></a> <span style="color:var(--muted)">${esc(l.note)}</span></div>`).join('')}</div>`; }
+function ltbPanelHtml(s){
+  const a=s.ltbAuto, m=LTB.meta;
+  let h=`<div class="doccheck"><b>Free automatic check: LTB Order Catalogue</b>
+    <p class="hint">Searches the Ontario government's open file of LTB orders for the applicant's name, in your browser. Nothing about the applicant leaves your computer. Names and addresses come from the applications, so confirm any hit against the order itself. <a href="${LTB_PAGE}" target="_blank" rel="noopener">Dataset page ↗</a></p>
+    <p class="hint" style="margin:0 0 6px">${m?`Dataset on this device: <b>${m.rows}</b> orders${m.minDate?`, ${esc(m.minDate)} to ${esc(m.maxDate)}`:''}. Loaded ${esc(fmtDT(m.loadedAt))} | Refresh monthly`:'Dataset not loaded yet.'}</p>
+    <div class="actions" style="margin:6px 0"><button class="small" ${LTB.busy?'disabled':''} onclick="loadLtbUrl()">${m?'Refresh':'Download'} dataset (about 21 MB)</button>
+      <span class="hint" style="align-self:center">or choose a downloaded CSV:</span> <input type="file" accept=".csv,text/csv" style="width:auto;max-width:100%" onchange="loadLtbFile(this.files[0])"></div>
+    ${LTB.msg?`<div class="note">${esc(LTB.msg)}</div>`:''}
+    <button class="primary" ${(!m||LTB.busy)?'disabled':''} onclick="runLtbCheck()">Run LTB check for ${esc(s.applicant.name||'applicant')}</button>`;
+  if(a){
+    h+=`<div style="margin-top:12px"><span class="chip ${a.flagged?'c-concern':'c-clear'}">${a.flagged?'Flagged':'No adverse match'}</span> <span class="badge">${esc(fmtDT(a.ranAt))}</span><p style="margin:6px 0">${esc(a.summary)}</p>`;
+    if(a.matches.length) h+=`<div class="tablewrap"><table><thead><tr><th>File</th><th>Application</th><th>Date</th><th>Role</th><th>Address</th><th>Match</th><th></th></tr></thead><tbody>${a.matches.map(x=>`<tr><td>${esc(x.file)}</td><td>${esc(x.appType)}${x.arrears?' <span class="chip c-concern">arrears</span>':''}</td><td>${esc(x.date)}</td><td>${esc(x.role)}</td><td>${esc(x.address)}</td><td>${x.addressMatch?'Name + address':'Name only'}</td><td>${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">PDF ↗</a>`:''}</td></tr>`).join('')}</tbody></table></div>${a.total>a.matches.length?`<p class="hint">Showing ${a.matches.length} of ${a.total}.</p>`:''}`;
+    const rec=ltbRecommendation(a);
+    h+=`<div class="note" style="${a.flagged?'':'background:#E4EEE8;color:#244634'}"><b>${rec.title}</b><ol style="margin:4px 0 0;padding-left:18px">${rec.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>
+      <div class="sec-no" style="margin-top:8px">Where to search next</div>${searchLinksHtml()}</div>`;
+  }
+  return h+`</div>`;
+}
+
+/* ======================= REPORT MODEL ======================= */
+function reportModel(s){
+  const e=evaluate(s);
+  return {
+    id:s.id.toUpperCase(), generatedAt:nowISO(), applicant:s.applicant, rental:s.rental, criteria:s.criteria,
+    outcome:{final:e.final, computed:e.computed, overridden:e.overridden, reasons:e.reasons.map(c=>REASONS[c]), flags:e.flags, missing:e.missing,
+             justification:e.overridden?s.override.justification:'' },
+    dims:DIMS.map(d=>{ const ck=s.checks[d.key]||{}; const st=dimStatus(s,d.key); let detail='';
+      if(d.key==='credit') detail = (s.credit.score!==''?`Score ${s.credit.score} (minimum ${s.criteria.minCredit||'-'})`:'');
+      if(d.key==='income'){ const v=r2i(s); detail = (s.income.sufficient?`Income covers rent: ${s.income.sufficient==='yes'?'Yes':'No'}`:'')+(v!=null?`. Rent-to-income ${v}% (information only)`:''); if(s.income.monthly) detail += `. Monthly income ${money(s.income.monthly)}`; }
+      const src = d.key==='credit' ? (ck.source||'') : (ck.source||'');
+      return {key:d.key, short:d.short, name:d.name, status:st, source:src, date:ck.date||'', note:[detail, ck.note].filter(Boolean).join(' ').trim(), awaitingConsent:!consentOK(s,d)};
+    }),
+    consents:Object.keys(CONSENTS).map(k=>({label:CONSENTS[k], given:!!(s.consents[k]&&s.consents[k].given), at:s.consents[k]&&s.consents[k].at})),
+    applicantResponse:s.applicantResponse, docCheck:s.docCheck||null, sourceVerified:s.sourceVerified||{method:'',date:'',steps:[]},
+    ltbAuto:s.ltbAuto||null, ltbRec:ltbRecommendation(s.ltbAuto||null),
+    attestation:s.attestation||{given:false,at:null}, verified:isSourceVerified(s),
+    stepsDone:((s.sourceVerified&&s.sourceVerified.steps)||[]).filter(Boolean).length, stepsTotal:LIVE_STEPS.length
+  };
+}
+function renderReport(el){
+  const s=cur(); const m=reportModel(s);
+  el.innerHTML=`<div class="actions noprint"><button onclick="ui.view='edit';render()">← Back to screening</button><button class="primary" onclick="downloadPdf()">Download PDF</button><button onclick="window.print()">Print</button></div>
+  <div class="panel">
+    <div class="sec-no">Tenant screening report · Ref ${m.id}</div>
+    <h2 style="font-size:26px;margin:2px 0 4px">${esc(m.applicant.name||'Unnamed applicant')}</h2>
+    <div class="hint">${esc(m.rental.property||'')} ${m.rental.rent?'· '+money(m.rental.rent)+'/month':''} · Generated ${esc(fmtDT(m.generatedAt))}</div>
+    ${m.outcome.final==='incomplete'?'<span class="stamp">DRAFT · INCOMPLETE</span>':''}
+    <div class="tiles">${m.dims.map(d=>`<div class="tile c-${d.status}">${d.short}<small>${STATUS_LABEL[d.status]}</small></div>`).join('')}</div>
+    <div class="outcome o-${m.outcome.final}"><div style="font-size:12px;color:var(--muted)">${m.outcome.overridden?'Owner decision (override)':'Result against locked criteria'}</div>
+      <div style="font-family:'Source Serif 4',serif;font-size:22px;font-weight:600">${OUTCOME_LABEL[m.outcome.final]}</div>
+      ${m.outcome.missing.length?`<p style="margin:6px 0 0">Still needed: ${m.outcome.missing.map(esc).join(', ')}</p>`:''}
+      ${m.outcome.reasons.length?`<ul style="margin:6px 0 0;padding-left:18px">${m.outcome.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>`:''}
+      ${m.outcome.flags.length?`<p style="margin:6px 0 0">Concerns to review: ${m.outcome.flags.map(esc).join(', ')}</p>`:''}
+      ${m.outcome.justification?`<p style="margin:6px 0 0"><b>Justification:</b> ${esc(m.outcome.justification)}</p>`:''}</div>
+    <h3 style="margin-top:18px">Criteria</h3>
+    <p>${m.criteria.lockedAt?`Locked ${esc(fmtDT(m.criteria.lockedAt))} | Minimum credit score ${esc(m.criteria.minCredit)} | References required: ${m.criteria.refRequired?'Yes':'No'}`:'Not locked.'}</p>
+    <h3 style="margin-top:18px">Checks</h3>
+    <div class="tablewrap"><table><thead><tr><th>Dimension</th><th>Result</th><th>Source and date</th><th>Details</th></tr></thead><tbody>
+      ${m.dims.map(d=>`<tr><td>${esc(d.name)}</td><td>${chip(d.status)}</td><td>${esc(d.source||'-')}<br><span class="hint">${esc(d.date?fmtDate(d.date):'')}</span></td><td>${d.awaitingConsent?'<i>Consent not given</i>':esc(d.note||'')}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${m.ltbAuto?`<h3 style="margin-top:18px">LTB open-data check</h3>
+      <p><span class="chip ${m.ltbAuto.flagged?'c-concern':'c-clear'}">${m.ltbAuto.flagged?'Flagged':'No adverse match'}</span> <span class="hint">${esc(fmtDT(m.ltbAuto.ranAt))}</span></p><p>${esc(m.ltbAuto.summary)}</p>
+      ${m.ltbAuto.matches.length?`<div class="tablewrap"><table><thead><tr><th>File</th><th>Application</th><th>Date</th><th>Match</th></tr></thead><tbody>${m.ltbAuto.matches.slice(0,10).map(x=>`<tr><td>${esc(x.file)}</td><td>${esc(x.appType)}</td><td>${esc(x.date)}</td><td>${x.addressMatch?'Name + address':'Name only'}</td></tr>`).join('')}</tbody></table></div>`:''}
+      ${m.ltbAuto.flagged&&m.ltbRec?`<div class="note"><b>${m.ltbRec.title}</b><ol style="margin:4px 0 0;padding-left:18px">${m.ltbRec.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></div>`:''}`:''}
+    ${(m.docCheck||m.sourceVerified.method||m.attestation.given)?`<h3 style="margin-top:18px">Credit report authenticity</h3>
+      ${m.docCheck?`<p><span class="chip ${TIER_CLASS[m.docCheck.tier]}">${TIER_LABEL[m.docCheck.tier]}</span> <span class="hint">${esc(m.docCheck.fileName)} · SHA-256 ${esc((m.docCheck.sha256||'').slice(0,16))} · ${esc(fmtDT(m.docCheck.checkedAt))}</span></p>${findingsHtml(m.docCheck.findings.filter(x=>x.level!=='info'))}`:''}
+      <p>${esc(attestLine(m))}</p>
+      <p>${esc(verifyLine(m))}</p>
+      <p class="hint">Automated checks for signs of editing. They are not proof of authenticity.</p>`:''}
+    <h3 style="margin-top:18px">Consents</h3>
+    <div class="tablewrap"><table><tbody>${m.consents.map(c=>`<tr><td>${esc(c.label)}</td><td>${c.given?'Given '+esc(fmtDT(c.at)):'Not given'}</td></tr>`).join('')}</tbody></table></div>
+    ${m.applicantResponse?`<h3 style="margin-top:18px">Applicant's response</h3><p>${esc(m.applicantResponse)}</p>`:''}
+    <div class="note" style="margin-top:16px">Decision based only on the criteria locked before screening began. Rent-to-income is shown for information and is not a cut-off. Contains personal information; keep securely and delete when no longer needed. Not legal advice.</div>
+  </div>`;
+}
+
+/* ======================= PDF ======================= */
+function pdfClean(s){ return String(s==null?'':s).replace(/[—–]/g,'-').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/≥/g,'>=').replace(/·/g,'|').replace(/[^\x20-\x7E\xA0-\xFF\n]/g,''); }
+function buildPdf(m, JsPDF){
+  const doc=new JsPDF({unit:'pt',format:'letter'}); const W=612,H=792,M=44,CW=W-2*M; let y=0;
+  const INK=[28,43,57], MUT=[107,102,89], LINE=[201,194,179];
+  const COL={clear:[63,107,84],concern:[154,51,36],unchecked:[138,133,118],na:[154,138,102],met:[63,107,84],not_met:[154,51,36],review:[184,134,63],incomplete:[138,133,118]};
+  const TINT={met:[228,238,232],not_met:[243,225,221],review:[246,236,214],incomplete:[236,233,225]};
+  const need=h=>{ if(y+h>H-56){ doc.addPage(); y=M; } };
+  function txt(str,o){ o=o||{}; const size=o.size||10, lh=o.lh||1.35, x=o.x==null?M:o.x, w=o.w||CW;
+    doc.setFont(o.font||'helvetica',o.bold?'bold':'normal'); doc.setFontSize(size); doc.setTextColor.apply(doc,o.color||INK);
+    const lines=doc.splitTextToSize(pdfClean(str),w);
+    lines.forEach(l=>{ need(size*lh); doc.text(l,x,y+size); y+=size*lh; }); y+=o.gap||0; return lines.length; }
+  function section(t){ need(40); y+=10; txt(t,{size:12,bold:true,font:'times'}); doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.8); doc.line(M,y,W-M,y); y+=8; }
+  // header band
+  doc.setFillColor.apply(doc,INK); doc.rect(0,0,W,84,'F');
+  doc.setTextColor(248,245,239); doc.setFont('times','bold'); doc.setFontSize(22); doc.text('Tenant Screening Report',M,40);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text(pdfClean('Ontario residential tenancy | Ref '+m.id+' | Generated '+fmtDT(m.generatedAt)),M,60);
+  if(m.outcome.final==='incomplete'){ doc.setTextColor(217,183,122); doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.text('DRAFT - INCOMPLETE',W-M-110,40); }
+  y=102;
+  // applicant
+  txt(m.applicant.name||'Unnamed applicant',{size:17,bold:true,font:'times'});
+  txt([m.rental.property, m.rental.rent?money(m.rental.rent)+' per month':'', m.rental.moveIn?'Move-in '+fmtDate(m.rental.moveIn):''].filter(Boolean).join('  |  '),{size:10,color:MUT});
+  txt([m.applicant.email,m.applicant.phone,m.applicant.address].filter(Boolean).join('  |  '),{size:9,color:MUT,gap:8});
+  // scorecard tiles
+  const n=m.dims.length, gap=4, tw=(CW-gap*(n-1))/n; need(48);
+  m.dims.forEach((d,i)=>{ const x=M+i*(tw+gap); const c=COL[d.status]; doc.setFillColor.apply(doc,c); doc.roundedRect(x,y,tw,40,3,3,'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text(pdfClean(d.short),x+tw/2,y+17,{align:'center'});
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.text(pdfClean(STATUS_LABEL[d.status]),x+tw/2,y+30,{align:'center'}); });
+  y+=52;
+  // outcome box
+  const lines=[]; const ow=CW-30;
+  m.outcome.reasons.forEach(r=>lines.push('- '+r));
+  if(m.outcome.missing.length) lines.push('Still needed: '+m.outcome.missing.join(', '));
+  if(m.outcome.flags.length) lines.push('Concerns to review: '+m.outcome.flags.join(', '));
+  if(m.outcome.justification) lines.push('Owner justification: '+m.outcome.justification);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+  const wrapped=lines.map(l=>doc.splitTextToSize(pdfClean(l),ow)); const nl=wrapped.reduce((a,b)=>a+b.length,0);
+  const bh=44+nl*13; need(bh+6);
+  doc.setFillColor.apply(doc,TINT[m.outcome.final]); doc.rect(M,y,CW,bh,'F'); doc.setFillColor.apply(doc,COL[m.outcome.final]); doc.rect(M,y,6,bh,'F');
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor.apply(doc,MUT);
+  doc.text(pdfClean(m.outcome.overridden?'OWNER DECISION (OVERRIDE OF COMPUTED RESULT)':'RESULT AGAINST LOCKED CRITERIA'),M+18,y+16);
+  doc.setFont('times','bold'); doc.setFontSize(18); doc.setTextColor.apply(doc,COL[m.outcome.final]); doc.text(pdfClean(OUTCOME_LABEL[m.outcome.final]),M+18,y+36);
+  let ty=y+52; doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc,INK);
+  wrapped.forEach(ls=>ls.forEach(l=>{ doc.text(l,M+18,ty); ty+=13; }));
+  y+=bh+8;
+  // criteria
+  section('Criteria');
+  txt(m.criteria.lockedAt?('Locked '+fmtDT(m.criteria.lockedAt)+' before any check was recorded. Minimum credit score '+m.criteria.minCredit+'. References required: '+(m.criteria.refRequired?'Yes':'No')+'.'):'Criteria were not locked.',{size:10});
+  // checks table
+  section('Checks');
+  const colW=[142,66,117,CW-345];
+  const cols=[M,M+150,M+222,M+345];
+  need(20); doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor.apply(doc,MUT);
+  ['DIMENSION','RESULT','SOURCE / DATE','DETAILS'].forEach((h,i)=>doc.text(h,cols[i],y+8)); y+=14;
+  m.dims.forEach(d=>{
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+    const a=doc.splitTextToSize(pdfClean(d.name),colW[0]);
+    const b=doc.splitTextToSize(pdfClean([d.source||'-', d.date?fmtDate(d.date):''].filter(Boolean).join('\n')),colW[2]);
+    const c=doc.splitTextToSize(pdfClean(d.awaitingConsent?'Consent not given':(d.note||'')),colW[3]);
+    const rows=Math.max(a.length,b.length,c.length,2); const rh=rows*11+8; need(rh);
+    doc.setTextColor.apply(doc,INK); doc.setFont('helvetica','bold'); doc.text(a,cols[0],y+9); doc.setFont('helvetica','normal');
+    const st=STATUS_LABEL[d.status]; const cwid=doc.getTextWidth(st)+12;
+    doc.setFillColor.apply(doc,COL[d.status]); doc.roundedRect(cols[1],y+1,Math.max(cwid,50),12,6,6,'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.text(pdfClean(st),cols[1]+Math.max(cwid,50)/2,y+9.5,{align:'center'});
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc,INK); doc.text(b,cols[2],y+9); doc.text(c,cols[3],y+9);
+    y+=rh; doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.5); doc.line(M,y-3,W-M,y-3);
+  });
+  // LTB open data
+  if(m.ltbAuto){
+    section('LTB open-data check');
+    txt((m.ltbAuto.flagged?'Flagged: ':'No adverse match: ')+m.ltbAuto.summary,{size:9.5,bold:true,color:m.ltbAuto.flagged?COL.not_met:COL.met,gap:3});
+    m.ltbAuto.matches.slice(0,10).forEach(x=>txt('File '+x.file+' | '+x.appType+' | '+x.date+' | '+(x.addressMatch?'name + address':'name only'),{size:9}));
+    if(m.ltbAuto.flagged&&m.ltbRec){ txt(m.ltbRec.title+':',{size:9.5,bold:true}); m.ltbRec.steps.forEach(x=>txt('- '+x,{size:9})); }
+  }
+  // authenticity
+  if(m.docCheck || m.sourceVerified.method || m.attestation.given){
+    section('Credit report authenticity');
+    if(m.docCheck){
+      const TC={clean:COL.met,warn:COL.review,high:COL.not_met,unassessable:COL.incomplete};
+      txt('Result: '+TIER_LABEL[m.docCheck.tier],{size:10.5,bold:true,color:TC[m.docCheck.tier]});
+      txt('File: '+m.docCheck.fileName+'  |  SHA-256: '+(m.docCheck.sha256||'').slice(0,16)+'  |  Checked '+fmtDT(m.docCheck.checkedAt),{size:8.5,color:MUT,gap:3});
+      m.docCheck.findings.filter(x=>x.level!=='info').forEach(x=>txt('['+LEVEL_LABEL[x.level]+'] '+x.title+'. '+x.detail,{size:9,color:x.level==='high'?COL.not_met:INK}));
+    }
+    txt(attestLine(m),{size:9.5});
+    txt(verifyLine(m),{size:9.5,bold:true});
+    txt('Automated checks for signs of editing. They are not proof of authenticity.',{size:8.5,color:MUT});
+  }
+  // consents
+  section('Consents recorded');
+  m.consents.forEach(c=>{ txt(c.label+':  '+(c.given?'Given '+fmtDT(c.at):'Not given'),{size:9.5,color:c.given?INK:MUT}); });
+  if(m.applicantResponse){ section("Applicant's response to concerns"); txt(m.applicantResponse,{size:10}); }
+  section('Basis and handling');
+  txt('This result applies only the criteria locked before screening began, applied the same way to every applicant. Rent-to-income is shown for information and is not a cut-off. No information about protected grounds under the Ontario Human Rights Code was used. This report contains personal information: store it securely and delete it when no longer needed. It is not legal advice.',{size:9,color:MUT});
+  // footers
+  const pages=doc.getNumberOfPages();
+  for(let p=1;p<=pages;p++){ doc.setPage(p); doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.5); doc.line(M,H-40,W-M,H-40);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor.apply(doc,MUT);
+    doc.text(pdfClean('Confidential - contains personal information | Ref '+m.id),M,H-28); doc.text('Page '+p+' of '+pages,W-M,H-28,{align:'right'}); }
+  return doc;
+}
+function downloadPdf(){
+  const s=cur(); const m=reportModel(s);
+  const J = window.jspdf && window.jspdf.jsPDF;
+  if(!J){ toast('PDF library did not load (offline?). Using Print instead.'); window.print(); return; }
+  const doc=buildPdf(m,J);
+  const nm=(s.applicant.name||'applicant').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  doc.save('screening-'+nm+'-'+todayISO()+'.pdf'); toast('PDF downloaded');
+}
+
+/* ======================= LINK TO RENT ROLL ======================= */
+/* Rent Roll opens this page with the applicant and its locked criteria in the URL hash (#rr=...).
+   The result goes back by message to the window that opened us, or as a downloaded .json file. */
+function handleRentRollRequest(){
+  const m=/[#&]rr=([^&]+)/.exec(location.hash||''); if(!m) return;
+  try{
+    const req=JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));
+    if(!req||req.type!=='rentroll.screeningRequest'||req.version!==1||!req.requestId||!req.criteria) throw new Error('bad request');
+    let s=data.screenings.find(x=>x.source&&x.source.requestId===req.requestId);
+    if(!s){
+      s=blankScreening();
+      s.applicant={name:(req.applicant&&req.applicant.name)||'',email:(req.applicant&&req.applicant.email)||'',phone:(req.applicant&&req.applicant.phone)||'',address:''};
+      s.rental={property:(req.rental&&req.rental.property)||'',rent:(req.rental&&req.rental.rent!==''&&req.rental.rent!=null)?String(req.rental.rent):'',moveIn:''};
+      s.criteria={minCredit:Number(req.criteria.minCredit),refRequired:!!req.criteria.refRequired,lockedAt:req.criteria.lockedAt};
+      s.source={requestId:req.requestId,applicantId:req.applicantId,unitId:req.unitId,criteriaVersionId:req.criteriaVersionId,criteriaVersion:req.criteria.version};
+      data.screenings.unshift(s);
+    }
+    ui={view:'edit',id:s.id,confirmDelete:null}; save();
+    history.replaceState(null,'',location.pathname+location.search);
+    setTimeout(()=>toast('Opened from Rent Roll. Criteria are already locked.'),400);
+  }catch(e){ setTimeout(()=>toast('Could not read the request from Rent Roll.'),400); }
+}
+function buildRentRollPackage(s){
+  const e=evaluate(s); const checks={}; DIMS.forEach(d=>{ checks[d.key]=dimStatus(s,d.key); });
+  return {type:'rentroll.screeningResult',version:1,ref:s.id.toUpperCase(),exportedAt:nowISO(),createdAt:s.createdAt,decidedAt:nowISO(),
+    source:s.source?{requestId:s.source.requestId,applicantId:s.source.applicantId,unitId:s.source.unitId,criteriaVersionId:s.source.criteriaVersionId}:null,
+    applicant:{name:s.applicant.name,email:s.applicant.email,phone:s.applicant.phone,address:s.applicant.address},
+    rental:{property:s.rental.property,rent:s.rental.rent,moveIn:s.rental.moveIn},
+    criteria:{minCredit:Number(s.criteria.minCredit),refRequired:!!s.criteria.refRequired,lockedAt:s.criteria.lockedAt},
+    consents:s.consents||{},
+    report:{creditScore:(s.credit.score===''||s.credit.score==null)?null:Number(s.credit.score),income:(s.income.monthly===''||s.income.monthly==null)?null:Number(s.income.monthly),incomeSufficient:s.income.sufficient||'',r2i:r2i(s),refOutcome:checks.references,checks},
+    authenticity:s.docCheck?{tier:s.docCheck.tier,sha256:s.docCheck.sha256,fileName:s.docCheck.fileName}:null,
+    attested:!!(s.attestation&&s.attestation.given),
+    verifiedAtSource:isSourceVerified(s)?s.sourceVerified.method:null,
+    ltb:s.ltbAuto?{flagged:!!s.ltbAuto.flagged,summary:s.ltbAuto.summary,total:s.ltbAuto.total}:null,
+    outcome:{computed:e.computed,final:e.final,overridden:e.overridden,reasons:e.reasons,flags:e.flags,missing:e.missing,justification:e.overridden?s.override.justification:''},
+    applicantResponse:s.applicantResponse||''};
+}
+function canSendToRentRoll(s){ try{ return !!(window.opener && !window.opener.closed && s.source); }catch(e){ return false; } }
+function sendToRentRoll(){
+  const s=cur(); if(!s) return; const e=evaluate(s);
+  if(e.final==='incomplete'){ toast('Finish the screening first'); return; }
+  if(!canSendToRentRoll(s)){ downloadResultFile(); return; }
+  const pkg=buildRentRollPackage(s);
+  try{ window.opener.postMessage({type:'rentroll.screeningResult',payload:pkg},'*'); s.sentAt=nowISO(); s.ackAt=null; s.updatedAt=nowISO(); save(); render(); toast('Sent. Rent Roll will confirm.'); }
+  catch(err){ downloadResultFile(); }
+}
+function downloadResultFile(){
+  const s=cur(); if(!s) return; const e=evaluate(s);
+  if(e.final==='incomplete'){ toast('Finish the screening first'); return; }
+  const pkg=buildRentRollPackage(s);
+  const nm=(s.applicant.name||'applicant').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(pkg,null,2)],{type:'application/json'})); a.download='screening-result-'+nm+'-'+todayISO()+'.json';
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
+  s.downloadedAt=nowISO(); s.updatedAt=nowISO(); save(); render(); toast('Result file downloaded. Import it in Rent Roll (Screening tab).');
+}
+function rrPanelHtml(s){
+  const e=evaluate(s); const ok=e.final!=='incomplete'; const link=canSendToRentRoll(s);
+  return `<div class="panel"><div class="sec-no">5 · Rent Roll</div><h3>Send the result to Rent Roll</h3>
+    <p class="hint">Sends the outcome, score, check results and consents. The credit PDF, your notes and the PDF report stay in this tool.</p>
+    ${s.source?`<p class="hint">Linked to a Rent Roll applicant (criteria v${esc(s.source.criteriaVersion)}).</p>`:`<p class="hint">Not opened from Rent Roll, so this downloads a file. In Rent Roll, open the Screening tab and choose "Import a screening result".</p>`}
+    ${ok?'':`<div class="note">Finish the screening first${e.missing.length?': '+esc(e.missing.join(', ')):''}.</div>`}
+    <div class="actions noprint"><button class="primary" ${ok?'':'disabled'} onclick="sendToRentRoll()">${link?'Send to Rent Roll':'Download result file'}</button>${link?`<button ${ok?'':'disabled'} onclick="downloadResultFile()">Download file instead</button>`:''}</div>
+    ${s.ackAt?`<p class="hint">Rent Roll confirmed it received this on ${esc(fmtDT(s.ackAt))}.</p>`:(s.sentAt?`<p class="hint">Sent ${esc(fmtDT(s.sentAt))}. Waiting for Rent Roll to confirm. If nothing happens, use "Download file instead".</p>`:(s.downloadedAt?`<p class="hint">File downloaded ${esc(fmtDT(s.downloadedAt))}.</p>`:''))}
+    ${e.final==='review'?'<div class="note">Flagged for review. Rent Roll will bring it in undecided so you choose pass or fail there, or record your own decision above first.</div>':''}</div>`;
+}
+if(typeof window.addEventListener==='function'){
+  window.addEventListener('message',ev=>{
+    const d=ev.data; if(!d||d.type!=='rentroll.ack') return;
+    if(window.opener&&ev.source!==window.opener) return;
+    const s=data.screenings.find(x=>x.id.toUpperCase()===d.ref); if(!s) return;
+    if(d.ok){ s.ackAt=nowISO(); save(); render(); toast('Rent Roll confirmed it received the result.'); }
+    else toast('Rent Roll could not import it: '+(d.message||'unknown reason'));
+  });
+}
+
+/* ======================= ROOT ======================= */
+function render(){ renderList(); renderMain(); }
+if(!window.__TEST__){ load(); handleRentRollRequest(); render(); initLtbMeta(); }
+</script>
+</body>
+</html>
