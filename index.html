@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tenant Screening</title>
+<title>v2 · Tenant Screening</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -103,7 +103,7 @@ const DIMS = [
    sources:['Equifax Canada (applicant-supplied)','TransUnion Canada (applicant-supplied)','Equifax / TransUnion direct','FrontLobby','Certn','Other licensed provider'], link:['Equifax Canada','https://www.equifax.ca']},
   {key:'income', short:'Income', name:'Income and affordability', req:true, desc:'Collected only alongside the credit check (O. Reg. 290/98). Answer yes/no: does income cover the rent? The rent-to-income number is information only and never decides the outcome.',
    sources:['Recent paystubs','Employment letter','CRA Notice of Assessment','Bank statements']},
-  {key:'employment', short:'Employer', name:'Employment verification', consent:'employment', desc:'Optional. Confirms the employer and role the applicant stated.', sources:['Employer contacted by phone/email','Employment letter']},
+  {key:'employment', short:'Employer', name:'Employment verification', consent:'employment', desc:'Optional. Confirms the employer and role the applicant stated.', sources:['Employer contacted by phone/email','Employment letter','Preliminary: payslip analysis and public web search']},
   {key:'references', short:'Refs', name:'Rental history and landlord references', consent:'reference', refDim:true, desc:'Contact current and previous landlords with the same questions for every applicant.',
    sources:['Current landlord','Previous landlord','Landlord letter']},
   {key:'ltb', short:'LTB', name:'LTB decisions (public record)', consent:'public', desc:'Look for Landlord and Tenant Board orders against the applicant. A confirmed arrears order is flagged for your review, not an automatic fail, and the applicant should get a chance to respond.',
@@ -137,7 +137,7 @@ function blankScreening(){
     rental:{property:'',rent:'',moveIn:''},
     criteria:{minCredit:'',refRequired:true,lockedAt:null},
     consents:{}, checks:{}, credit:{score:''}, income:{monthly:'',sufficient:''},
-    override:{outcome:'',justification:''}, applicantResponse:'', docCheck:null, sourceVerified:{method:'',date:'',steps:[]}, attestation:{given:false,at:null}, source:null, sentAt:null, ackAt:null, downloadedAt:null };
+    override:{outcome:'',justification:''}, applicantResponse:'', docCheck:null, sourceVerified:{method:'',date:'',steps:[]}, attestation:{given:false,at:null}, docs:[], docConfirm:{idPhoto:false,employer:false}, manual:{}, prelim:null, prelimIn:{}, source:null, sentAt:null, ackAt:null, downloadedAt:null };
 }
 function newScreening(){ const s=blankScreening(); data.screenings.unshift(s); save(); ui={view:'edit',id:s.id,confirmDelete:null}; render(); }
 function sampleScreening(){
@@ -227,7 +227,7 @@ function inp(path,label,type,val,extra){ return `<div class="field"><label>${lab
 function renderMain(){
   const el=document.getElementById('main');
   if(ui.view==='home'||!cur()){
-    el.innerHTML = `<div class="panel"><h3>Screen a tenant, get a PDF report</h3>
+    el.innerHTML = `<div class="panel">${privacyBannerHtml()}<h3>Screen a tenant, get a PDF report</h3>
       <p class="hint">Add the applicant, lock your criteria, record each check (with the applicant's consent where needed), and download a report. Everything is stored only in this browser.</p>
       <div class="actions"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="sampleScreening()">Try a sample applicant</button></div></div>`;
     return;
@@ -256,11 +256,12 @@ function renderEditor(el){
      <button class="primary" onclick="lockCriteria()">Lock criteria</button>`}
   </div>
 
-  <div class="panel"><div class="sec-no">3 · Checks</div><h3>Nine dimensions</h3>
+  ${docsPanelHtml(s)}
+  <div class="panel"><div class="sec-no">4 · Checks</div><h3>Nine dimensions</h3>
     <p class="hint">${locked?'Record each check. Tick the consent first where one is needed.':'Lock the criteria above to unlock the checks.'}</p>
     <fieldset ${locked?'':'disabled'}>${DIMS.map(d=>dimCard(s,d)).join('')}</fieldset></div>
 
-  <div class="panel"><div class="sec-no">4 · Result</div><h3>Outcome</h3><div id="outcome"></div></div>
+  <div class="panel"><div class="sec-no">5 · Result</div><h3>Outcome</h3><div id="outcome"></div></div>
   ${rrPanelHtml(s)}
   <div class="actions noprint"><button class="primary" onclick="ui.view='report';render()">View report and download PDF</button></div>`;
   refreshLive();
@@ -288,7 +289,7 @@ function dimCard(s,d){
     <p class="hint" style="margin:4px 0">${d.desc}${d.link?` <a href="${d.link[1]}" target="_blank" rel="noopener">${d.link[0]} ↗</a>`:''}</p>
     ${d.consent?`<label class="consent"><input type="checkbox" ${ok?'checked':''} onchange="toggleConsent('${d.consent}',this.checked)"> Applicant consent: ${CONSENTS[d.consent]}${ok&&s.consents[d.consent]?` <span class="badge">${esc(fmtDT(s.consents[d.consent].at))}</span>`:''}</label>`:''}
     ${ok?'':'<div class="note">Awaiting consent. This check cannot be recorded without it.</div>'}
-    ${d.key==='ltb'&&ok?ltbPanelHtml(s):''}${body}${common}${srcRow}</div>`;
+    ${ok?sectionChecksHtml(s,d.key)+manualBannerHtml(s,d.key):''}${d.key==='ltb'&&ok?ltbPanelHtml(s):''}${d.key==='employment'&&ok?prelimPanelHtml(s):''}${(d.key==='references'||d.key==='employment')&&ok?mailPanelHtml(s,d.key==='references'?'landlord':'employer'):''}${body}${common}${srcRow}</div>`;
 }
 function liveR2I(){ const s=cur(); const el=document.getElementById('r2i'); if(!el) return; const inp=document.querySelector('input[onchange*="income.monthly"]'); const i=Number(inp.value), r=Number(s.rental.rent); el.textContent=(r>0&&i>0)?Math.round(r/i*100)+'%':'enter rent and income'; }
 function refreshLive(){
@@ -604,13 +605,14 @@ function reportModel(s){
              justification:e.overridden?s.override.justification:'' },
     dims:DIMS.map(d=>{ const ck=s.checks[d.key]||{}; const st=dimStatus(s,d.key); let detail='';
       if(d.key==='credit') detail = (s.credit.score!==''?`Score ${s.credit.score} (minimum ${s.criteria.minCredit||'-'})`:'');
-      if(d.key==='income'){ const v=r2i(s); detail = (s.income.sufficient?`Income covers rent: ${s.income.sufficient==='yes'?'Yes':'No'}`:'')+(v!=null?`. Rent-to-income ${v}% (information only)`:''); if(s.income.monthly) detail += `. Monthly income ${money(s.income.monthly)}`; }
+      if(d.key==='income'){ const v=r2i(s); detail = (s.income.sufficient?`Income covers rent: ${s.income.sufficient==='yes'?'Yes':'No'}`:'')+(v!=null?`. Rent-to-income ${v}% (information only)`:''); if(s.income.monthly) detail += `. Monthly income ${money(s.income.monthly)}`+(s.income.basis?` (${s.income.basis})`:''); }
       const src = d.key==='credit' ? (ck.source||'') : (ck.source||'');
       return {key:d.key, short:d.short, name:d.name, status:st, source:src, date:ck.date||'', note:[detail, ck.note].filter(Boolean).join(' ').trim(), awaitingConsent:!consentOK(s,d)};
     }),
     consents:Object.keys(CONSENTS).map(k=>({label:CONSENTS[k], given:!!(s.consents[k]&&s.consents[k].given), at:s.consents[k]&&s.consents[k].at})),
     applicantResponse:s.applicantResponse, docCheck:s.docCheck||null, sourceVerified:s.sourceVerified||{method:'',date:'',steps:[]},
-    ltbAuto:s.ltbAuto||null, ltbRec:ltbRecommendation(s.ltbAuto||null),
+    ltbAuto:s.ltbAuto||null, ltbRec:ltbRecommendation(s.ltbAuto||null), prelim:prelimSummary(s),
+    docs:(s.docs&&s.docs.length)?{list:s.docs.map(d=>({type:DOC_TYPES[d.type],fileName:d.fileName,method:d.method,score:docScore(s,d),summary:docSummary(s,d),auth:d.auth?d.auth.tier:''})),checks:docChecks(s),confirm:s.docConfirm||{},manual:manualSummary(s)}:null,
     attestation:s.attestation||{given:false,at:null}, verified:isSourceVerified(s),
     stepsDone:((s.sourceVerified&&s.sourceVerified.steps)||[]).filter(Boolean).length, stepsTotal:LIVE_STEPS.length
   };
@@ -645,6 +647,14 @@ function renderReport(el){
       <p>${esc(attestLine(m))}</p>
       <p>${esc(verifyLine(m))}</p>
       <p class="hint">Automated checks for signs of editing. They are not proof of authenticity.</p>`:''}
+    ${m.prelim?`<h3 style="margin-top:18px">Employment: preliminary verification</h3>
+      <p><span class="chip ${m.prelim.result==='pass'?'c-clear':m.prelim.result==='fail'?'c-concern':'c-review'}">${({pass:'Preliminary pass',fail:'Documents disagree',inconclusive:'Inconclusive: employer email recommended'})[m.prelim.result]}</span> <b>${m.prelim.score}/100</b> <span class="hint">${esc(m.prelim.employer||'')} · ${esc(fmtDT(m.prelim.at))} · web search: ${esc(m.prelim.provider||'none')}</span></p>
+      ${m.prelim.signals.map(c=>`<span style="display:block">${c.st==='ok'?'✓':c.st==='bad'?'✕':c.st==='warn'?'!':'○'} ${esc(c.txt)}</span>`).join('')}
+      <p class="hint">Based on payslip data and public web results about the employer. Not confirmed with the employer unless stated in the Employment check above.</p>`:''}
+    ${m.docs?`<h3 style="margin-top:18px">Documents read automatically</h3>
+      <div class="tablewrap"><table><thead><tr><th>Document</th><th>Key details read</th></tr></thead><tbody>${m.docs.list.map(x=>`<tr><td>${esc(x.type)}<br><span class="hint">${esc(x.fileName)}${x.method==='ocr'?' · OCR':''}</span></td><td>${esc(x.summary||'-')}</td></tr>`).join('')}</tbody></table></div>
+      <p style="margin-top:8px">${m.docs.checks.map(c=>`<span style="display:block">${c.lvl==='ok'?'✓':c.lvl==='bad'?'✕':c.lvl==='warn'?'!':'i'} ${esc(c.txt)}</span>`).join('')}</p>
+      ${m.docs.manual.length?`<div class="note"><b>Manual verification and overrides</b>${m.docs.manual.map(x=>`<div>${esc(x.section)}: ${esc(x.state)}</div>`).join('')}</div>`:''}<p class="hint">Read by software from files the applicant supplied. ID photo compared by owner: ${m.docs.confirm.idPhoto?'yes':'no'}. Employer confirmed directly: ${m.docs.confirm.employer?'yes':'no'}. Not proof of authenticity.</p>`:''}
     <h3 style="margin-top:18px">Consents</h3>
     <div class="tablewrap"><table><tbody>${m.consents.map(c=>`<tr><td>${esc(c.label)}</td><td>${c.given?'Given '+esc(fmtDT(c.at)):'Not given'}</td></tr>`).join('')}</tbody></table></div>
     ${m.applicantResponse?`<h3 style="margin-top:18px">Applicant's response</h3><p>${esc(m.applicantResponse)}</p>`:''}
@@ -739,6 +749,19 @@ function buildPdf(m, JsPDF){
     txt(verifyLine(m),{size:9.5,bold:true});
     txt('Automated checks for signs of editing. They are not proof of authenticity.',{size:8.5,color:MUT});
   }
+  if(m.prelim){
+    section('Employment: preliminary verification');
+    txt(({pass:'Preliminary pass',fail:'Documents disagree',inconclusive:'Inconclusive: employer email recommended'})[m.prelim.result]+'  |  score '+m.prelim.score+'/100  |  '+(m.prelim.employer||'')+'  |  web search: '+(m.prelim.provider||'none'),{size:9.5,bold:true,color:m.prelim.result==='pass'?COL.met:m.prelim.result==='fail'?COL.not_met:COL.review});
+    m.prelim.signals.forEach(c=>txt((c.st==='ok'?'[OK] ':c.st==='bad'?'[PROBLEM] ':c.st==='warn'?'[CHECK] ':'[TO DO] ')+c.txt,{size:9,color:c.st==='bad'?COL.not_met:INK}));
+    txt('Based on payslip data and public web results about the employer. Not confirmed with the employer unless stated in the Employment check.',{size:8.5,color:MUT});
+  }
+  if(m.docs){
+    section('Documents read automatically');
+    m.docs.list.forEach(x=>{ txt(x.type+' ('+x.fileName+(x.method==='ocr'?', OCR':'')+')',{size:9.5,bold:true,gap:1}); txt(x.summary||'-',{size:8.5,color:MUT,gap:3}); });
+    m.docs.manual.forEach(x=>txt('[MANUAL] '+x.section+': '+x.state,{size:9,bold:true,color:COL.review}));
+    m.docs.checks.forEach(c=>txt((c.lvl==='ok'?'[OK] ':c.lvl==='bad'?'[PROBLEM] ':c.lvl==='warn'?'[CHECK] ':'[NOTE] ')+c.txt,{size:9,color:c.lvl==='bad'?COL.not_met:INK}));
+    txt('ID photo compared by owner: '+(m.docs.confirm.idPhoto?'yes':'no')+'. Employer confirmed directly: '+(m.docs.confirm.employer?'yes':'no')+'. Software reading of applicant-supplied files; not proof of authenticity.',{size:8.5,color:MUT});
+  }
   // consents
   section('Consents recorded');
   m.consents.forEach(c=>{ txt(c.label+':  '+(c.given?'Given '+fmtDT(c.at):'Not given'),{size:9.5,color:c.given?INK:MUT}); });
@@ -760,6 +783,835 @@ function downloadPdf(){
   const nm=(s.applicant.name||'applicant').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
   doc.save('screening-'+nm+'-'+todayISO()+'.pdf'); toast('PDF downloaded');
 }
+
+
+/* ======================= DOCUMENT READER (v2) ======================= */
+/* Reads uploaded documents on this computer (PDF text, or OCR for photos/scans), recognises the type,
+   pulls out the fields, cross-checks them, and proposes values for the checks. Nothing is uploaded anywhere.
+   Only the extracted fields are kept, never the image or the full text. */
+const DOC_TYPES={id:'Photo ID',paystub:'Paystub',noa:'CRA Notice of Assessment',t4:'T4 slip',letter:'Employment letter',credit:'Credit report',bank:'Bank statement',lease:'Previous lease',osb:'OSB insolvency search result',police:'Police record check (applicant-supplied)',court:'Court records search result',other:'Unrecognized document'};
+const DOC_MEM={}; const DOC_ST={busy:false,applied:[]};
+const OCR_URL='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+const OCR_LANG='https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int';
+
+/* ---------- text helpers ---------- */
+const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+const NUM_RX=/\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?/g;
+function dnum(x){ if(x==null) return null; const n=parseFloat(String(x).replace(/[$,\s]/g,'')); return isFinite(n)?n:null; }
+function numsIn(str){ return (String(str||'').match(NUM_RX)||[]).map(dnum).filter(n=>n!=null); }
+function iso(y,m,d){ y=+y;m=+m;d=+d; if(y<1990||y>2100||m<1||m>12||d<1||d>31) return null; return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+function datesIn(str){
+  str=String(str||''); const out=[]; let m;
+  const R=[[/\b(20\d\d|19\d\d)[-\/.](\d{1,2})[-\/.](\d{1,2})\b/g,x=>iso(x[1],x[2],x[3])],
+    [/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d\d|19\d\d)\b/gi,x=>iso(x[3],MON[x[1].toLowerCase()],x[2])],
+    [/\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(20\d\d|19\d\d)\b/gi,x=>iso(x[3],MON[x[2].toLowerCase()],x[1])],
+    [/\b(\d{1,2})[\/-](\d{1,2})[\/-](20\d\d)\b/g,x=>{ const a=+x[1],b=+x[2]; if(a>12) return iso(x[3],b,a); if(b>12) return iso(x[3],a,b); return null; }]];
+  R.forEach(([rx,fn])=>{ while((m=rx.exec(str))){ const v=fn(m); if(v) out.push({i:m.index,d:v}); } });
+  return out.sort((a,b)=>a.i-b.i).map(x=>x.d);
+}
+function firstDate(str){ return datesIn(str)[0]||null; }
+function findLine(L,rx){ return L.find(l=>rx.test(l)); }
+function labelVal(L,rx){
+  for(let i=0;i<L.length;i++){ const m=rx.exec(L[i]); if(m){ let t=L[i].slice(m.index+m[0].length).replace(/^[\s:.\-–]+/,'').trim(); if(!t&&L[i+1]) t=L[i+1].trim(); if(t) return t; } }
+  return '';
+}
+function dateNear(L,rx){
+  for(let i=0;i<L.length;i++){ const m=rx.exec(L[i]); if(m){ const d=firstDate(L[i].slice(m.index)+' '+(L[i+1]||'')); if(d) return d; } }
+  return null;
+}
+function cleanName(t){
+  t=String(t||'').replace(/^[\s:.\-–]+/,'');
+  const m=/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'.\-]*(?:\s+[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'.\-]*){0,3}/.exec(t); if(!m) return '';
+  const stop=/\b(id|no|number|sin|pay|period|dept|department|position|title|date|address|employee|employer|company|date of birth|dob|issued|class|sex|height)\b/i;
+  const out=[]; for(const w of m[0].split(/\s+/)){ if(stop.test(w)) break; out.push(w); } return out.join(' ');
+}
+function titleCase(x){ return String(x||'').toLowerCase().replace(/\b([a-zà-ÿ])/g,c=>c.toUpperCase()); }
+function normName(x){ return String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z\s'-]/g,' ').replace(/\s+/g,' ').trim(); }
+function nameTokens(x){ return normName(x).split(/[\s'-]+/).filter(t=>t.length>=2); }
+function nameMatch(a,b){
+  const A=nameTokens(a),B=nameTokens(b); if(!A.length||!B.length) return null;
+  const [sm,lg]=A.length<=B.length?[A,B]:[B,A];
+  const hits=sm.filter(t=>lg.some(u=>u===t||(t.length>=4&&u.length>=4&&(u.startsWith(t)||t.startsWith(u))))).length;
+  if(hits===sm.length&&sm.length>=2) return 'match'; if(hits>=1) return 'partial'; return 'mismatch';
+}
+function nameInText(name,text){ const T=normName(text); const tk=nameTokens(name); if(tk.length<2) return null; return tk.filter(t=>T.includes(t)).length>=Math.min(2,tk.length); }
+function cityOf(T){ const m=/,\s*([A-Z][A-Za-z.\- ]{2,28}?)\s*,?\s+(?:ON|Ontario)\b/.exec(T); return m?m[1].trim():undefined; }
+function orgGuess(L){ return (L.slice(0,8).find(l=>/\b(inc|ltd|limited|corp|corporation|company|co\.|llc|services|group|hospital|school|university|college|city of|region of|ontario|canada|bank|foods|solutions|systems|technologies|logistics|construction|holdings)\b/i.test(l))||'').replace(/\s{2,}/g,' ').trim(); }
+function orgTokens(x){ return normName(x).split(/\s+/).filter(t=>t.length>=3&&!/^(inc|ltd|limited|corp|corporation|company|the|and|llc|canada)$/.test(t)); }
+function orgSame(a,b){ const A=orgTokens(a),B=orgTokens(b); if(!A.length||!B.length) return null; return A.some(t=>B.includes(t)); }
+function itemsToLines(items){
+  const rows=[]; items.slice().sort((a,b)=>b.y-a.y||a.x-b.x).forEach(it=>{ if(!String(it.str).trim()) return; let r=rows.find(r=>Math.abs(r.y-it.y)<2.5); if(!r){ r={y:it.y,t:[]}; rows.push(r); } r.t.push(it); });
+  return rows.sort((a,b)=>b.y-a.y).map(r=>r.t.sort((a,b)=>a.x-b.x).map(i=>i.str).join(' ').replace(/\s+/g,' ').trim()).filter(Boolean);
+}
+
+/* ---------- machine-readable zone (passports, PR cards) ---------- */
+function mrzVal(c){ if(c==='<') return 0; if(c>='0'&&c<='9') return +c; return c.charCodeAt(0)-55; }
+function mrzOk(str,chk){ if(chk==null||!/[0-9<]/.test(chk)) return false; const w=[7,3,1]; let t=0; for(let i=0;i<str.length;i++) t+=mrzVal(str[i])*w[i%3]; return t%10===(chk==='<'?0:+chk); }
+function fixNum(s){ return s.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/B/g,'8').replace(/S/g,'5').replace(/Z/g,'2'); }
+function mrzDateIso(s,future){ s=fixNum(s); if(!/^\d{6}$/.test(s)) return null; let y=+s.slice(0,2); y=future?2000+y:(y>(new Date().getFullYear()%100)?1900+y:2000+y); return iso(y,s.slice(2,4),s.slice(4,6)); }
+function mrzName(part){ const bits=part.split('<<'); const sur=(bits[0]||'').replace(/</g,' ').trim(); const giv=(bits.slice(1).join(' ')||'').replace(/</g,' ').replace(/\s+/g,' ').trim(); return titleCase((giv+' '+sur).trim()); }
+function parseMrz(L){
+  const C=L.map(l=>l.replace(/\s/g,'').replace(/«/g,'<').toUpperCase()).filter(l=>l.length>=26);
+  for(let i=0;i<C.length-1;i++){ // TD3 passport
+    const a=C[i], b=C[i+1];
+    if(/^P[<A-Z]/.test(a)&&a.length>=40&&a.length<=46&&b.length>=40&&b.length<=46){
+      const dob=fixNum(b.slice(13,19)), exp=fixNum(b.slice(21,27));
+      const valid=mrzOk(b.slice(0,9),b[9])&&mrzOk(dob,b[19])&&mrzOk(exp,b[27]);
+      return {kind:'Passport',name:mrzName(a.slice(5)),expiry:mrzDateIso(exp,true),country:a.slice(2,5).replace(/</g,''),mrzValid:valid};
+    }
+  }
+  for(let i=0;i<C.length-2;i++){ // TD1 (PR card, ID cards)
+    const a=C[i], b=C[i+1], c=C[i+2];
+    if(/^[ACI][<A-Z]/.test(a)&&a.length>=28&&a.length<=32&&b.length>=28&&b.length<=32&&c.length>=20&&/<</.test(c)){
+      const dob=fixNum(b.slice(0,6)), exp=fixNum(b.slice(8,14));
+      const valid=mrzOk(a.slice(5,14),a[14])&&mrzOk(dob,b[6])&&mrzOk(exp,b[14]);
+      return {kind:/resident|résident/i.test(L.join(' '))?'Permanent resident card':'Photo ID (machine-readable)',name:mrzName(c),expiry:mrzDateIso(exp,true),country:a.slice(2,5).replace(/</g,''),mrzValid:valid};
+    }
+  }
+  return null;
+}
+
+/* ---------- classify ---------- */
+function classifyDoc(text,fileName,lines){
+  const t=text.toLowerCase(), sc={};
+  const hit=(k,rx,w)=>{ if(rx.test(t)) sc[k]=(sc[k]||0)+(w||1); };
+  if(parseMrz(lines)) sc.id=(sc.id||0)+5;
+  hit('id',/driver'?s?\s*licen[cs]e|permis de conduire|passport|passeport|permanent resident|résident permanent|photo card|carte d'identit/,3);
+  hit('id',/\b(dob|date of birth|date de naissance)\b/,1); hit('id',/\b(class|sex|height)\b.*\b(exp|expiry)\b/,1);
+  ['pay ?stub','earnings statement','pay statement','statement of earnings','net pay','gross pay','\\bytd\\b','year[- ]to[- ]date','pay period','pay date','deductions'].forEach(k=>hit('paystub',new RegExp(k),1));
+  ['notice of assessment','avis de cotisation','line 15000','total income','canada revenue agency','agence du revenu'].forEach(k=>hit('noa',new RegExp(k),k==='notice of assessment'||k==='avis de cotisation'?3:1));
+  ['\\bt4\\b','statement of remuneration','état de la rémunération','box 14','employment income'].forEach(k=>hit('t4',new RegExp(k),k==='\\bt4\\b'||k==='statement of remuneration'?3:1));
+  ['to whom it may concern','employment (verification|letter|confirmation)','is employed','has been employed','verify (his|her|their) employment','is currently employed','job title','full[- ]time|part[- ]time','sincerely'].forEach(k=>hit('letter',new RegExp(k),1));
+  ['equifax','transunion','credit report','beacon','credit score','trade ?lines?','inquiries'].forEach(k=>hit('credit',new RegExp(k),k==='equifax'||k==='transunion'||k==='credit report'?2:1));
+  ['account statement','statement period','opening balance','closing balance','withdrawals','deposits','transaction','e-?transfer','payroll deposit','pre-?authorized','\\bbalance\\b','\\bnsf\\b'].forEach(k=>hit('bank',new RegExp(k),1));
+  ['residential tenancy agreement','standard form of lease','lease','landlord','tenant','rental unit','term of (the )?tenancy'].forEach(k=>hit('lease',new RegExp(k),k.indexOf('tenancy agreement')>0||k==='standard form of lease'?3:1));
+  ['office of the superintendent of bankruptcy','bankruptcy and insolvency records search','insolvency search','estate number','osb search'].forEach(k=>hit('osb',new RegExp(k),3));
+  ['police (?:record|information|clearance) check','criminal record check','vulnerable sector','royal canadian mounted','\\brcmp\\b','police services?'].forEach(k=>hit('police',new RegExp(k),3));
+  ['ontario courts public portal','superior court of justice','small claims court','civil case search','court file (?:no|number)','case search'].forEach(k=>hit('court',new RegExp(k),3));
+  if(/\.csv$/i.test(fileName)) sc.bank=(sc.bank||0)+2;
+  let best='other',bs=0; Object.keys(sc).forEach(k=>{ if(sc[k]>bs){ bs=sc[k]; best=k; } });
+  return bs>=3?best:'other';
+}
+
+/* ---------- extractors ---------- */
+function xId(L){
+  const f={}; const mz=parseMrz(L); const T=L.join(' ');
+  if(mz){ f.kind=mz.kind; f.name=mz.name; f.expiry=mz.expiry; f.mrzValid=mz.mrzValid; f.country=mz.country; return f; }
+  f.kind=/driver'?s?\s*licen[cs]e|permis de conduire/i.test(T)?(/ontario/i.test(T)?'Ontario driver licence':'Driver licence'):/passport|passeport/i.test(T)?'Passport':/resident/i.test(T)?'Permanent resident card':'Photo ID';
+  let m=null; for(const l of L){ m=/^([A-Z][A-Z'\-]{1,24}),\s*([A-Z][A-Z'\- ]{1,40})$/.exec(l.trim()); if(m) break; }
+  if(!m) m=/\b([A-Z][A-Z'\-]{1,24}),\s*([A-Z][A-Z'\- ]{1,40}?)(?=\s+(?:\d|DOB|EXP|ISS|CLASS|SEX|HT|ADDRESS)|$)/.exec(T);
+  if(m) f.name=titleCase(m[2].trim()+' '+m[1]);
+  else{ const v=labelVal(L,/\b(?:name|nom|surname|given names?)\b\s*[:\-]?/i); const n=cleanName(v); if(n){ f.name=titleCase(n); f.nameGuess=true; } }
+  f.expiry=dateNear(L,/\b(?:exp(?:iry|ires|iration|\.)?|date d'expiration|valid until|expiry date)\b/i);
+  return f;
+}
+const PERIODS={weekly:52,biweekly:26,semimonthly:24,monthly:12};
+const FREQ_LABEL={weekly:'Weekly',biweekly:'Every two weeks',semimonthly:'Twice a month',monthly:'Monthly'};
+function xPaystub(L,fileName){
+  const f={}; const T=L.join(' ');
+  f.employer=cleanOrg(labelVal(L,/\b(?:employer|company|issued by|paid by)\b(?:\s*name)?\s*[:\-]?/i))||orgGuess(L);
+  const en=cleanName(labelVal(L,/\b(?:employee(?:\s*name)?|name of employee|pay to the order of)\b\s*[:\-]?/i)); f.employee=en?titleCase(en):'';
+  const gl=findLine(L,/\b(?:gross\s*(?:pay|earnings|income|wages|salary)?|total\s*(?:gross|earnings)|total\s*pay)\b/i);
+  if(gl){ const n=numsIn(after1(gl,/\b(?:gross\s*(?:pay|earnings|income|wages|salary)?|total\s*(?:gross|earnings)|total\s*pay)\b/i)).filter(x=>x>=1); if(n.length){ f.gross=n[0]; if(n.length>1&&n[n.length-1]>=n[0]) f.ytd=n[n.length-1]; } }
+  if(f.ytd==null){ const yl=findLine(L,/\b(?:ytd|year[- ]to[- ]date)\b.*gross|gross.*\b(?:ytd|year[- ]to[- ]date)\b/i); if(yl){ const n=numsIn(yl).filter(x=>x>=1); if(n.length) f.ytd=n[n.length-1]; } }
+  const nl=findLine(L,/\bnet\s*(?:pay|amount|income|deposit)|take[- ]home\b/i); if(nl){ const n=numsIn(after1(nl,/\bnet\s*(?:pay|amount|income|deposit)|take[- ]home\b/i)).filter(x=>x>=1); if(n.length) f.net=n[0]; }
+  const dl=findLine(L,/\btotal\s*deductions\b|\bdeductions\s*total\b/i); if(dl){ const n=numsIn(after1(dl,/\btotal\s*deductions\b|\bdeductions\s*total\b/i)); if(n.length) f.deductions=n[0]; }
+  const grab=(rx)=>{ const l=findLine(L,rx); if(!l) return undefined; const n=numsIn(after1(l,rx)).filter(x=>x>0); return n.length?n[0]:undefined; };
+  f.cpp=grab(/\bcpp\b|canada pension|c\.p\.p/i); f.ei=grab(/\bei\b(?!\w)|employment insurance|e\.i\./i); f.tax=grab(/income tax|federal tax|fed(?:eral)? (?:inc(?:ome)? )?tax|\bfit\b|tax deducted/i);
+  f.city=cityOf(T);
+  const rl=T.match(/\b(?:hourly\s*)?rate\b[^\d$]{0,12}\$?\s*(\d+(?:\.\d{1,4})?)/i); if(rl) f.rate=+rl[1];
+  const hl=T.match(/\bhours?\b[^\d]{0,12}(\d+(?:\.\d+)?)/i); if(hl) f.hours=+hl[1];
+  const pl=findLine(L,/pay period|period\s*(?:ending|end|from)|\bperiod\b/i); const pd=pl?datesIn(pl+' '+(L[L.indexOf(pl)+1]||'')):[];
+  if(pd.length>=2){ f.periodStart=pd[0]; f.periodEnd=pd[1]; } else if(pd.length===1) f.periodEnd=pd[0];
+  f.payDate=dateNear(L,/\b(?:pay date|date paid|payment date|cheque date|check date|issue date|paid on)\b/i)||f.periodEnd||null;
+  const fq=/bi-?\s?weekly|every (?:two|2) weeks|fortnight/i.test(T)?'biweekly':/semi-?\s?monthly|twice (?:a|per) month|24 pay/i.test(T)?'semimonthly':/\bweekly\b/i.test(T)?'weekly':/\bmonthly\b/i.test(T)?'monthly':null;
+  f.freq=fq;
+  if(!f.freq&&f.periodStart&&f.periodEnd){ const days=Math.round((new Date(f.periodEnd)-new Date(f.periodStart))/86400000)+1; f.freq=days<=8?'weekly':days<=15?(days>=15?'semimonthly':'biweekly'):days>=27?'monthly':null; }
+  const notes=paystubDerive(f); const guess={}; if(!labelVal(L,/\b(?:employer|company|issued by|paid by)\b(?:\s*name)?\s*[:\-]?/i)) guess.employer=true;
+  return {f,notes,guess};
+}
+const PAYROLL={2024:{cpp:.0595,ympe:68500,ex:3500,ei:.0166,mie:63200},2025:{cpp:.0595,ympe:71300,ex:3500,ei:.0164,mie:65700},2026:{cpp:.0595,ympe:74600,ex:3500,ei:.0163,mie:68900}};
+function payrollPlausibility(f){
+  const r={cpp:null,ei:null,tax:null}; if(!f.gross||!f.freq) return r;
+  const yr=f.payDate?+f.payDate.slice(0,4):2026; const T=PAYROLL[yr]||PAYROLL[yr>2026?2026:2024]; const n=PERIODS[f.freq]; const prior=(f.ytd&&f.ytd>=f.gross)?f.ytd-f.gross:null;
+  const expCpp=(prior!=null&&prior>=T.ympe)?0:Math.max(0,f.gross-T.ex/n)*T.cpp; const expEi=(prior!=null&&prior>=T.mie)?0:f.gross*T.ei;
+  const cmp=(act,exp)=>act==null?{st:'missing',exp}:(Math.abs(act-exp)<=Math.max(0.12*exp,2.5)?{st:'ok',exp,act}:{st:'off',exp,act});
+  r.cpp=cmp(f.cpp,expCpp); r.ei=cmp(f.ei,expEi);
+  if(f.tax==null) r.tax={st:'missing'}; else { const ratio=f.tax/f.gross; r.tax=(ratio<0.02||ratio>0.45)?{st:'off',act:f.tax,ratio}:{st:'ok',act:f.tax,ratio}; }
+  return r;
+}
+function paystubDerive(f){
+  const notes=[];
+  const pp=payrollPlausibility(f);
+  if(pp.cpp&&pp.cpp.st==='off') notes.push({lvl:'warn',txt:'CPP deducted ($'+pp.cpp.act.toFixed(2)+') is not close to the expected $'+pp.cpp.exp.toFixed(2)+' for this gross and pay period.'});
+  if(pp.ei&&pp.ei.st==='off') notes.push({lvl:'warn',txt:'EI deducted ($'+pp.ei.act.toFixed(2)+') is not close to the expected $'+pp.ei.exp.toFixed(2)+'.'});
+  if(pp.tax&&pp.tax.st==='off') notes.push({lvl:'warn',txt:'Income tax deducted ('+Math.round(pp.tax.ratio*100)+'% of gross) is unusually '+(pp.tax.ratio<0.02?'low':'high')+'.'});
+  f.monthly=(f.gross&&f.freq)?Math.round(f.gross*PERIODS[f.freq]/12*100)/100:undefined;
+  if(f.gross&&f.net&&f.net>f.gross*1.001) notes.push({lvl:'bad',txt:'Net pay is higher than gross pay.'});
+  if(f.gross&&f.net&&f.deductions!=null&&Math.abs(f.gross-f.deductions-f.net)>1.5) notes.push({lvl:'bad',txt:'Gross minus deductions does not equal net pay (off by $'+Math.abs(f.gross-f.deductions-f.net).toFixed(2)+').'});
+  if(f.rate&&f.hours&&f.gross&&Math.abs(f.rate*f.hours-f.gross)/f.gross>0.03) notes.push({lvl:'warn',txt:'Rate x hours ($'+(f.rate*f.hours).toFixed(2)+') differs from gross. Could be overtime or bonus.'});
+  if(f.ytd&&f.gross&&f.ytd<f.gross*0.999) notes.push({lvl:'bad',txt:'Year-to-date gross is lower than this period\'s gross.'});
+  if(f.ytd&&f.gross&&f.freq&&f.payDate){ const dd=new Date(f.payDate); const doy=Math.round((dd-new Date(dd.getFullYear(),0,0))/86400000); const per=Math.max(1,Math.round(doy/(365/PERIODS[f.freq]))); const exp=f.gross*per; if(f.ytd<exp*0.6||f.ytd>exp*1.4) notes.push({lvl:'warn',txt:'Year-to-date ($'+f.ytd.toLocaleString()+') is not close to what '+per+' pay periods of this size would give ($'+Math.round(exp).toLocaleString()+'). Could be a mid-year start, or a sign of editing.'}); }
+  return notes;
+}
+function after1(line,rx){ const m=rx.exec(line); return m?line.slice(m.index+m[0].length):line; }
+function cleanOrg(t){ t=String(t||'').replace(/^[\s:.\-–]+/,'').replace(/\s+(?:employee|pay|period|date|address|id)\b.*$/i,'').trim(); return t.length>2&&t.length<70?t:''; }
+function xNoa(L){
+  const f={}; const T=L.join(' ');
+  let m=/(?:tax year|year)\D{0,15}(20\d\d)/i.exec(T)||/notice of assessment\D{0,40}(20\d\d)/i.exec(T); if(m) f.year=+m[1];
+  const il=findLine(L,/\btotal income\b|\bline\s*15000\b/i); if(il){ const n=numsIn(il.replace(/line\s*15000/i,'').replace(/\b20\d\d\b/,'')).filter(x=>x>=100); if(n.length) f.totalIncome=n[n.length-1]; }
+  const nl=findLine(L,/\bnet income\b|\bline\s*23600\b/i); if(nl){ const n=numsIn(nl.replace(/line\s*23600/i,'').replace(/\b20\d\d\b/,'')).filter(x=>x>=100); if(n.length) f.netIncome=n[n.length-1]; }
+  return {f,notes:[]};
+}
+function xT4(L){
+  const f={}; const T=L.join(' ');
+  let m=/(?:tax year|year|année)\D{0,15}(20\d\d)/i.exec(T)||/\bT4\b\D{0,30}(20\d\d)/i.exec(T); if(m) f.year=+m[1];
+  const bl=findLine(L,/\b14\b.*employment income|employment income.*\b14\b|box 14|revenus d'emploi/i); if(bl){ const n=numsIn(bl.replace(/\bbox\s*14\b/i,'').replace(/\b14\b/,'')).filter(x=>x>=100); if(n.length) f.employment=n[n.length-1]; }
+  const tl=findLine(L,/\b22\b.*income tax|income tax.*\b22\b|box 22/i); if(tl){ const n=numsIn(tl.replace(/\b22\b/,'')); if(n.length) f.tax=n[n.length-1]; }
+  const eo=cleanOrg(labelVal(L,/employer'?s name|nom de l'employeur/i)); f.employer=eo||orgGuess(L);
+  const en=cleanName(labelVal(L,/employee'?s name|nom de l'employé/i)); f.employee=en?titleCase(en):'';
+  return {f,notes:[],guess:eo?{}:{employer:true}};
+}
+function xLetter(L){
+  const f={}, T=L.join(' ');
+  f.employer=orgGuess(L)||cleanOrg(labelVal(L,/\b(?:employer|company)\b\s*[:\-]?/i));
+  let m=/(?:that|confirm(?:s)?(?:\s+that)?)\s+(?:mr\.?|ms\.?|mrs\.?|mx\.?|dr\.?)?\s*([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){1,3})\s+(?:is|has been|was|works)\b/.exec(T); if(m) f.employee=m[1];
+  m=/\b(?:position|title|role)(?:\s+of|\s+as|\s+is)?\s*[:\-]?\s*(?:a |an |the )?([A-Z][A-Za-z\/&,\- ]{2,50}?)(?=[.,;]| since| with| at | full| part| and | for |$)/.exec(T)||/\bemployed\b[^.]{0,60}?\bas\s+(?:a |an |the )?([A-Za-z][A-Za-z\/&\- ]{2,45}?)(?=[.,;]| since| with| at | full| part| and | for |$)/i.exec(T); if(m) f.title=m[1].trim();
+  m=/full[- ]time|part[- ]time|contract|permanent|casual|seasonal|probation(?:ary)?/i.exec(T); if(m) f.type=m[0].toLowerCase();
+  f.start=dateNear(L,/\b(?:since|start(?:ed|ing)?\s*(?:date|on)?|commenced|date of hire|hired on|joined(?: us)?(?: on)?|employed since)\b/i);
+  f.letterDate=firstDate(T);
+  m=/\$\s*([\d,]+(?:\.\d{1,2})?)\s*(?:per|\/|a)\s*(year|annum|yr|hour|hr|month|week)/i.exec(T)||/annual (?:salary|income|pay)\D{0,15}\$\s*([\d,]+(?:\.\d{1,2})?)()/i.exec(T);
+  if(m){ const v=dnum(m[1]); const u=(m[2]||'year').toLowerCase(); const hw=/(\d{2}(?:\.\d)?)\s*hours?\s*(?:per|a|\/)\s*week/i.exec(T); const hrs=hw?+hw[1]:null;
+    f.payText='$'+v.toLocaleString()+' per '+(u==='annum'||u==='yr'?'year':u==='hr'?'hour':u);
+    f.annual=/year|annum|yr/.test(u)||!m[2]?v:/month/.test(u)?v*12:/week/.test(u)?v*52:(hrs?v*hrs*52:null); }
+  m=/\(?\b(\d{3})\)?[-. ]\d{3}[-. ]\d{4}\b/.exec(T); if(m) f.phone=m[0];
+  f.city=cityOf(T);
+  return {f,notes:[],guess:{employer:true}};
+}
+function xCredit(L){
+  const f={}, T=L.join(' '); let m, r=/(?:credit\s*score|beacon(?:\s*score)?|fico|\bscore\b)[^\d\n]{0,30}(\d{3})(?!\d)/gi;
+  while((m=r.exec(T))){ const n=+m[1]; if(n>=300&&n<=900){ f.score=n; break; } }
+  f.bureau=/equifax/i.test(T)?'Equifax':/transunion|trans union/i.test(T)?'TransUnion':'';
+  f.reportDate=dateNear(L,/\b(?:report date|date of report|date issued|as of|generated|date requested|file date|date)\b/i);
+  const cnt=(rx)=>{ const mm=rx.exec(T); return mm?+mm[1]:null; };
+  f.collections=cnt(/\bcollections?\b[^\d\n]{0,25}(\d+)/i); f.publicRecords=cnt(/\bpublic records?\b[^\d\n]{0,25}(\d+)/i); f.latePayments=cnt(/(?:past due|late payments?|delinquen\w+)[^\d\n]{0,25}(\d+)/i); f.inquiries=cnt(/\binquiries\b[^\d\n]{0,25}(\d+)/i);
+  f.bankruptcy=/bankruptc|consumer proposal/i.test(T)&&!/no (?:bankruptc|consumer proposal)/i.test(T);
+  return {f,notes:[]};
+}
+function xLease(L){
+  const f={}, T=L.join(' ');
+  const ln=cleanNameOrg(labelVal(L,/\blandlord(?:'s)?(?:\s*legal)?(?:\s*name)?\b\s*[:\-]?/i)); if(ln) f.landlord=ln;
+  const tn=cleanName(labelVal(L,/\btenant(?:'s)?(?:\s*legal)?(?:\s*name)?\b\s*[:\-]?/i)); if(tn) f.tenant=titleCase(tn);
+  const ad=labelVal(L,/\b(?:rental unit address|address of (?:the )?(?:rental unit|premises)|premises|municipal address|rental unit)\b\s*[:\-]?/i); if(ad) f.address=ad.slice(0,90);
+  const rm=/\brent\b[^$\d\n]{0,50}\$\s*([\d,]+(?:\.\d{2})?)/i.exec(T); if(rm) f.rent=dnum(rm[1]);
+  f.start=dateNear(L,/\b(?:tenancy (?:starts?|begins?)|term (?:starts?|begins?)|commenc\w+|start date|beginning)\b/i);
+  f.end=dateNear(L,/\b(?:tenancy ends?|term ends?|end date|expires?|until|terminat\w+)\b/i);
+  return {f,notes:[]};
+}
+function cleanNameOrg(t){ t=String(t||'').replace(/^[\s:.\-–]+/,''); const m=/^[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9'.&,\- ]{1,60}?(?=\s+(?:tenant|address|phone|email|date|unit|rent)\b|$)/i.exec(t); return m?m[0].trim():''; }
+function xBank(L,fileName,csvRows){
+  const f={}, notes=[]; const tx=[];
+  const credRx=/deposit|payroll|direct dep|salary|e-?transfer (?:from|received|rec)|refund|interest|paie|dépôt|\bpay\b/i;
+  const payRx=/payroll|direct dep|salary|paie|dep(?:osit)? ?pay|employer|\bpay deposit|\bpay\b/i;
+  if(csvRows){
+    const hdr=csvRows[0].map(x=>String(x).toLowerCase()); const ix=rx=>hdr.findIndex(h=>rx.test(h));
+    const iD=ix(/date/), iDesc=ix(/desc|detail|memo|payee|transaction|particulars/), iIn=ix(/deposit|credit|money in|inflow|amount in/), iOut=ix(/withdraw|debit|money out|outflow|amount out/), iAmt=ix(/^amount|amount$/);
+    csvRows.slice(1).forEach(r=>{ const d=firstDate(r[iD]||'')||(r[iD]||'').slice(0,10); const desc=r[iDesc]||''; let amt=null,dir=null;
+      if(iIn>=0&&dnum(r[iIn])){ amt=Math.abs(dnum(r[iIn])); dir='in'; } else if(iOut>=0&&dnum(r[iOut])){ amt=Math.abs(dnum(r[iOut])); dir='out'; } else if(iAmt>=0&&dnum(r[iAmt])!=null){ const v=dnum(r[iAmt]); amt=Math.abs(v); dir=v>=0?'in':'out'; }
+      if(amt!=null&&d) tx.push({d:/^\d{4}-\d\d-\d\d$/.test(d)?d:(firstDate(d)||d),desc,amt,dir}); });
+  } else {
+    L.forEach(l=>{ const d=firstDate(l.slice(0,24)); if(!d) return; let rest=l.replace(/^\S+(?:\s+\S+){0,2}?\s(?=[A-Za-z])/,''); const n=numsIn(l.replace(/\b(20\d\d|19\d\d)[-\/.]\d{1,2}[-\/.]\d{1,2}\b/g,'')); if(!n.length) return;
+      const amt=n.length>=2?n[n.length-2]:n[0]; const dir=credRx.test(l)?'in':'out'; tx.push({d,desc:rest.replace(NUM_RX,'').replace(/\s+/g,' ').trim().slice(0,40),amt,dir}); });
+  }
+  const dts=tx.map(t=>t.d).filter(d=>/^\d{4}-\d\d-\d\d$/.test(d)).sort();
+  if(dts.length){ f.periodStart=dts[0]; f.periodEnd=dts[dts.length-1]; }
+  const pay=tx.filter(t=>t.dir==='in'&&payRx.test(t.desc||'')); f.payrollCount=pay.length; f.payroll=pay.slice(0,12).map(p=>({d:p.d,amt:p.amt}));
+  if(pay.length){ const months=new Set(dts.map(d=>d.slice(0,7))).size||1; f.payrollMonthly=Math.round(pay.reduce((a,b)=>a+b.amt,0)/months*100)/100; }
+  f.nsf=L.concat(csvRows?csvRows.map(r=>r.join(' ')):[]).filter(l=>/\bnsf\b|insufficient funds|returned item|overdraft|non-sufficient/i.test(l)).length;
+  f.txCount=tx.length;
+  if(f.nsf) notes.push({lvl:'warn',txt:f.nsf+' line(s) mention NSF, returned items or overdraft.'});
+  return {f,notes};
+}
+function parseCsv2(text){ const rows=[]; let row=[],cur='',q=false; for(let i=0;i<text.length;i++){ const c=text[i]; if(q){ if(c==='"'&&text[i+1]==='"'){ cur+='"'; i++; } else if(c==='"') q=false; else cur+=c; } else if(c==='"') q=true; else if(c===','||c===';'||c==='\t'){ row.push(cur); cur=''; } else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; row.push(cur); if(row.some(x=>x.trim())) rows.push(row); row=[]; cur=''; } else cur+=c; } row.push(cur); if(row.some(x=>x.trim())) rows.push(row); return rows; }
+function xSearchResult(L,kind){
+  const f={}, T=L.join(' ');
+  const none=/no (?:matching )?(?:records?|results?|cases?|insolvenc\w+|files?)(?: were| was)?(?: found| located| returned)?|nothing (?:was )?found|no criminal record|no record of|no adverse/i.test(T);
+  const found=/\brecords? found\b|\bbankrupt(?:cy)?\s+(?:filed|discharged|estate|assignment)|\bassignment in bankruptcy|consumer proposal|\bjudgment\b|\bconvictions?\b|\bcharges?\b|court file (?:no|number)\s*[:#]?\s*[A-Z0-9\-]+/i.test(T.replace(/office of the superintendent of bankruptcy(?: canada)?/ig,'').replace(/bankruptcy and insolvency(?: records)?(?: search)?/ig,''));
+  f.result=none&&!found?'none':found&&!none?'found':(none&&found?'unclear':'unclear');
+  f.date=dateNear(L,/\b(?:search date|date of search|date searched|date issued|issued|date)\b/i)||firstDate(T);
+  const nm=cleanName(labelVal(L,/\b(?:name searched|searched name|subject|applicant|name)\b\s*[:\-]?/i)); if(nm) f.subject=titleCase(nm);
+  if(kind==='police') f.kind=/vulnerable sector/i.test(T)?'Vulnerable sector check':'Criminal record check';
+  return {f,notes:[],guess:{}};
+}
+function extractDoc(type,L,fileName,csvRows){
+  if(type==='osb'||type==='court'||type==='police') return xSearchResult(L,type);
+  switch(type){ case 'id':{ const f=xId(L); const g=f.nameGuess?{name:true}:{}; delete f.nameGuess; return {f,notes:[],guess:g}; } case 'paystub':return xPaystub(L,fileName); case 'noa':return xNoa(L); case 't4':return xT4(L); case 'letter':return xLetter(L); case 'credit':return xCredit(L); case 'lease':return xLease(L); case 'bank':return xBank(L,fileName,csvRows); default:return {f:{},notes:[]}; }
+}
+
+/* ---------- reading files (text, OCR) ---------- */
+function loadScript(src){ return new Promise((res,rej)=>{ const e=document.createElement('script'); e.src=src; e.onload=res; e.onerror=()=>rej(new Error('Could not load '+src)); document.head.appendChild(e); }); }
+let _ocr=null;
+async function ensureOcr(){
+  if(_ocr) return _ocr;
+  if(!window.Tesseract) await loadScript(window.__OCR_URL||OCR_URL);
+  _ocr=await window.Tesseract.createWorker('eng',1,Object.assign({langPath:OCR_LANG,logger:m=>{ if(m.status&&m.progress!=null) setBusy('Reading text from image... '+Math.round(m.progress*100)+'%'); }},window.__OCR_OPTS||{}));
+  return _ocr;
+}
+async function ocrBlob(blob){ const w=await ensureOcr(); const r=await w.recognize(blob); return {text:r.data.text||'',conf:Math.round(r.data.confidence||0)}; }
+function setBusy(msg){ const e=document.getElementById('docBusy'); if(e) e.textContent=msg; }
+function pdfFlags(bytes,meta,hasText){
+  const f=[]; const str=new TextDecoder('latin1').decode(bytes); const eof=(str.match(/%%EOF/g)||[]).length; const lin=/\/Linearized/.test(str); const updates=Math.max(0,eof-1-(lin?1:0));
+  const info=meta.info||{}; const prod=String(info.Producer||'')+' '+String(info.Creator||''); const cd=parsePdfDate(info.CreationDate), md=parsePdfDate(info.ModDate); const gap=(cd&&md)?(md-cd):0;
+  if(EDIT_TOOLS.test(prod)) f.push({level:(updates>0||gap>120000)?'high':'warn',title:'Saved by an editing tool ('+prod.match(EDIT_TOOLS)[0]+')'});
+  if(updates>0) f.push({level:'warn',title:updates+' appended revision(s) on top of the original'});
+  if(gap>120000) f.push({level:'warn',title:'Modified '+Math.round(gap/60000)+' minutes after it was created'});
+  if(!hasText) f.push({level:'info',title:'No text layer: scanned or photographed, so edits cannot be detected'});
+  const tier=f.some(x=>x.level==='high')?'high':f.some(x=>x.level==='warn')?'warn':(!hasText?'unassessable':'clean');
+  return {tier,flags:f,producer:prod.trim()};
+}
+async function readOne(s,file){
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  let sha=''; try{ const h=await crypto.subtle.digest('SHA-256',bytes); sha=[...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join(''); }catch(e){}
+  if((s.docs||[]).some(d=>d.sha256&&d.sha256===sha)){ toast('Already added: '+file.name); return; }
+  const isPdf=String.fromCharCode.apply(null,bytes.slice(0,5))==='%PDF-';
+  const isImg=/^image\//.test(file.type)||/\.(png|jpe?g|webp|heic|bmp|gif)$/i.test(file.name);
+  let lines=[], method='text', conf=null, auth=null, csvRows=null;
+  if(isPdf){
+    const lib=await ensurePdfJs(); const doc=await lib.getDocument({data:bytes.slice()}).promise; const meta={info:{}};
+    try{ meta.info=(await doc.getMetadata()).info||{}; }catch(e){}
+    const per=[]; for(let p=1;p<=Math.min(doc.numPages,8);p++){ const page=await doc.getPage(p); const tc=await page.getTextContent(); per.push(itemsToLines(tc.items.map(i=>({str:i.str,x:i.transform[4],y:i.transform[5]})))); }
+    lines=[].concat.apply([],per); const hasText=lines.join('').replace(/\s/g,'').length>=40;
+    if(!hasText){
+      method='ocr'; lines=[]; const confs=[];
+      for(let p=1;p<=Math.min(doc.numPages,3);p++){ setBusy('Rendering page '+p+' for OCR...'); const page=await doc.getPage(p); const vp=page.getViewport({scale:2}); const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+        await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise; const blob=await new Promise(r=>cv.toBlob(r,'image/png')); const o=await ocrBlob(blob); lines=lines.concat(o.text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)); confs.push(o.conf); }
+      conf=confs.length?Math.round(confs.reduce((a,b)=>a+b,0)/confs.length):null;
+    }
+    auth=pdfFlags(bytes,meta,hasText);
+  } else if(isImg){
+    method='ocr'; setBusy('Reading text from image...'); const o=await ocrBlob(file); lines=o.text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean); conf=o.conf;
+    auth={tier:'unassessable',flags:[{level:'info',title:'Photo or scan: edits to the image cannot be detected here'}],producer:''};
+  } else {
+    const txt=new TextDecoder('utf-8').decode(bytes); lines=txt.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    if(/\.(csv|tsv)$/i.test(file.name)) csvRows=parseCsv2(txt);
+    auth={tier:'unassessable',flags:[{level:'info',title:'Plain text or CSV: no file history to check'}],producer:''};
+  }
+  const text=lines.join('\n'); const id=uid();
+  const type=classifyDoc(text,file.name,lines);
+  const ex=extractDoc(type,lines,file.name,csvRows);
+  const d={id,fileName:file.name,size:file.size,sha256:sha,type,typeAuto:type,method,conf,readAt:nowISO(),f:ex.f,notes:ex.notes,guess:ex.guess||{},over:{},auth,nameHit:null};
+  (s.docs||(s.docs=[])).push(d); DOC_MEM[id]={text,lines,csvRows,file};
+  if(type==='id'&&!s.applicant.name&&ex.f.name) s.applicant.name=ex.f.name;
+  refreshNameHits(s);
+}
+function refreshNameHits(s){ (s.docs||[]).forEach(d=>{ const m=DOC_MEM[d.id]; if(m&&m.csvRows){ d.nameHit=null; return; } if(m&&s.applicant.name) d.nameHit=nameInText(s.applicant.name,m.text); }); }
+async function readDocFiles(files){
+  const s=cur(); if(!s||!files||!files.length) return; DOC_ST.busy=true; render();
+  for(const file of Array.from(files)){ try{ setBusy('Reading '+file.name+'...'); await readOne(s,file); }catch(e){ console.error(e); toast('Could not read '+file.name+(/Could not load/.test(e.message)?' (text reader unavailable offline)':'')); } }
+  DOC_ST.busy=false; s.updatedAt=nowISO(); save(); render();
+}
+function onDocDrop(ev){ ev.preventDefault(); readDocFiles(ev.dataTransfer.files); }
+function removeDoc(id){ const s=cur(); if(!s) return; s.docs=(s.docs||[]).filter(d=>d.id!==id); delete DOC_MEM[id]; s.updatedAt=nowISO(); save(); render(); }
+function reclassifyDoc(id,type){ const s=cur(); const d=(s.docs||[]).find(x=>x.id===id); const m=DOC_MEM[id]; if(!d) return; if(!m){ toast('Add the file again to change its type'); render(); return; }
+  d.type=type; const ex=extractDoc(type,m.lines,d.fileName,m.csvRows); d.f=ex.f; d.notes=ex.notes; d.guess=ex.guess||{}; d.over={}; refreshNameHits(s); s.updatedAt=nowISO(); save(); render(); }
+
+/* ---------- field specs and confidence ---------- */
+/* Confidence is a number from 0 to 100 for each field and each document.
+   Text PDFs start at 97. Photos and scans start from the OCR engine's own confidence.
+   Adjustments: guessed (not labelled) fields x0.8; valid machine-readable zone sets name/expiry to 99;
+   failed zone caps at 40; a name that matches the application gets +10; paystub arithmetic errors x0.7;
+   a value the owner typed in is 100 and flagged as an owner edit.
+   A document score is the average over the fields found, scaled by how many critical fields were found. */
+const LOW_CONF=80;
+const FIELD_SPEC={
+ id:[{k:'kind',l:'Document',t:'text'},{k:'name',l:'Name',t:'text',c:1},{k:'expiry',l:'Expires',t:'date',c:1},{k:'mrzValid',l:'Machine-readable zone',t:'mrz'}],
+ paystub:[{k:'employer',l:'Employer',t:'text',c:1},{k:'employee',l:'Employee',t:'text'},{k:'payDate',l:'Pay date',t:'date',c:1},{k:'freq',l:'Frequency',t:'freq',c:1},{k:'gross',l:'Gross (period)',t:'$',c:1},{k:'net',l:'Net pay',t:'$',c:1},{k:'ytd',l:'Gross year to date',t:'$'},{k:'deductions',l:'Total deductions',t:'$'},{k:'cpp',l:'CPP deducted',t:'$'},{k:'ei',l:'EI deducted',t:'$'},{k:'tax',l:'Income tax deducted',t:'$'},{k:'city',l:'Employer city',t:'text'},{k:'monthly',l:'Monthly gross (est.)',t:'derived'}],
+ noa:[{k:'year',l:'Tax year',t:'num',c:1},{k:'totalIncome',l:'Total income',t:'$',c:1},{k:'netIncome',l:'Net income',t:'$'}],
+ t4:[{k:'year',l:'Tax year',t:'num'},{k:'employer',l:'Employer',t:'text'},{k:'employee',l:'Employee',t:'text'},{k:'employment',l:'Employment income (box 14)',t:'$',c:1},{k:'tax',l:'Income tax deducted (box 22)',t:'$'}],
+ letter:[{k:'employer',l:'Employer',t:'text',c:1},{k:'employee',l:'Employee named',t:'text'},{k:'title',l:'Position',t:'text',c:1},{k:'type',l:'Type',t:'text'},{k:'start',l:'Start date',t:'date',c:1},{k:'annual',l:'Annual pay (stated)',t:'$'},{k:'city',l:'Employer city',t:'text'},{k:'letterDate',l:'Letter date',t:'date'}],
+ credit:[{k:'bureau',l:'Bureau',t:'text'},{k:'score',l:'Score',t:'num',c:1},{k:'reportDate',l:'Report date',t:'date',c:1},{k:'collections',l:'Collections',t:'num'},{k:'latePayments',l:'Late payments',t:'num'},{k:'inquiries',l:'Inquiries',t:'num'},{k:'publicRecords',l:'Public records',t:'num'}],
+ bank:[{k:'period',l:'Period',t:'ro',get:f=>f.periodStart?f.periodStart+' to '+f.periodEnd:null},{k:'txCount',l:'Transactions read',t:'ro'},{k:'payrollCount',l:'Payroll deposits',t:'num',c:1},{k:'payrollMonthly',l:'Payroll per month (est., net)',t:'$'},{k:'nsf',l:'NSF / overdraft mentions',t:'num'}],
+ lease:[{k:'landlord',l:'Landlord',t:'text',c:1},{k:'tenant',l:'Tenant',t:'text'},{k:'address',l:'Address',t:'text',c:1},{k:'rent',l:'Rent',t:'$',c:1},{k:'start',l:'Starts',t:'date'},{k:'end',l:'Ends',t:'date'}],
+ osb:[{k:'result',l:'Result',t:'result',c:1},{k:'date',l:'Search date',t:'date',c:1},{k:'subject',l:'Name searched',t:'text'}],
+ court:[{k:'result',l:'Result',t:'result',c:1},{k:'date',l:'Search date',t:'date',c:1},{k:'subject',l:'Name searched',t:'text'}],
+ police:[{k:'kind',l:'Type',t:'text'},{k:'result',l:'Result',t:'result',c:1},{k:'date',l:'Date',t:'date',c:1},{k:'subject',l:'Name on certificate',t:'text'}],
+ other:[]
+};
+const RESULT_LABEL={none:'No record found',found:'Record found: review it',unclear:'Unclear: read the document'};
+const DIM_DOCS={identity:['id'],credit:['credit'],income:['paystub','noa','t4','letter','bank'],employment:['letter','paystub'],references:['lease'],bankruptcy:['osb'],court:['court'],police:['police']};
+const DIM_NAME={identity:'Identity',credit:'Credit',income:'Income',employment:'Employment',references:'References',bankruptcy:'Bankruptcy',court:'Court records',police:'Police record check'};
+function fmtMoney(v){ return '$'+Number(v).toLocaleString('en-CA',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function specVal(sp,f){ return sp.get?sp.get(f):f[sp.k]; }
+function fmtField(sp,f){ const v=specVal(sp,f); if(v==null||v==='') return null; if(sp.t==='$'||sp.t==='derived'&&sp.k==='monthly') return fmtMoney(v); if(sp.t==='freq') return FREQ_LABEL[v]||v; if(sp.t==='result') return RESULT_LABEL[v]||v; if(sp.t==='mrz') return v?'Valid':'Failed check'; return v; }
+function fieldConfs(s,d){
+  const base=d.method==='ocr'?(d.conf!=null?d.conf:65):97; const f=d.f, out={};
+  (FIELD_SPEC[d.type]||[]).forEach(sp=>{
+    if(sp.t==='ro'||sp.t==='mrz') return; const v=specVal(sp,f); if(v==null||v==='') return;
+    let c=base;
+    if(d.over&&d.over[sp.k]) c=100;
+    else{
+      if(d.guess&&d.guess[sp.k]) c*=0.8;
+      if(d.type==='id'&&f.mrzValid===true&&(sp.k==='name'||sp.k==='expiry')) c=Math.max(c,99);
+      if(d.type==='id'&&f.mrzValid===false) c=Math.min(c,40);
+      if((sp.k==='name'||sp.k==='employee'||sp.k==='tenant')&&nameMatch(s.applicant.name,v)==='match') c=Math.min(100,c+10);
+      if(d.type==='paystub'&&(d.notes||[]).some(n=>n.lvl==='bad')&&['gross','net','ytd'].includes(sp.k)) c*=0.7;
+    }
+    out[sp.k]=Math.round(Math.min(100,c));
+  });
+  if(out.monthly!=null){ out.monthly=Math.min(out.monthly,out.gross!=null?out.gross:out.monthly,out.freq!=null?out.freq:out.monthly); }
+  return out;
+}
+function docScore(s,d){
+  if(d.type==='other') return 0;
+  const spec=(FIELD_SPEC[d.type]||[]).filter(x=>x.t!=='ro'&&x.t!=='mrz'&&x.t!=='derived'); const fc=fieldConfs(s,d);
+  const found=spec.filter(x=>fc[x.k]!=null); if(!found.length) return 0;
+  const crit=spec.filter(x=>x.c), cf=crit.filter(x=>fc[x.k]!=null).length; const avg=found.reduce((a,x)=>a+fc[x.k],0)/found.length;
+  return Math.round(avg*(crit.length?cf/crit.length:1));
+}
+function docLow(s,d){ return d.type!=='other'&&docScore(s,d)<LOW_CONF; }
+function confColor(n){ return n>=85?'var(--green)':n>=LOW_CONF?'var(--amber)':'var(--red)'; }
+function confChip(n){ return `<span class="chip" style="background:${confColor(n)}">${n}%</span>`; }
+
+/* ---------- manual verification and override, per section ---------- */
+function dimLowDocs(s,key){ return (s.docs||[]).filter(d=>(DIM_DOCS[key]||[]).includes(d.type)&&docLow(s,d)); }
+function dimEdited(s,key){ const out=[]; (s.docs||[]).filter(d=>(DIM_DOCS[key]||[]).includes(d.type)).forEach(d=>Object.keys(d.over||{}).forEach(k=>{ const sp=(FIELD_SPEC[d.type]||[]).find(x=>x.k===k); out.push({doc:d,label:(sp?sp.l:k),from:d.over[k].from,to:d.over[k].to}); })); return out; }
+function manualState(s,key){ return (s.manual&&s.manual[key])||{}; }
+function dimAccepted(s,key){ const m=manualState(s,key); return !!(m.verified||(m.override&&String(m.note||'').trim().length>=10)); }
+function dimBlocked(s,key){ return dimLowDocs(s,key).length>0&&!dimAccepted(s,key); }
+function manualBannerHtml(s,key){
+  const low=dimLowDocs(s,key), ed=dimEdited(s,key); if(!low.length&&!ed.length) return '';
+  const m=manualState(s,key), acc=dimAccepted(s,key), p='manual.'+key+'.';
+  let h=`<div class="note" style="border-left:4px solid ${low.length&&!acc?'var(--red)':'var(--amber)'}">`;
+  if(low.length){
+    h+=`<b>${acc?'Low-confidence reading, accepted by you':'Low-confidence reading: manual verification needed'}</b><div>${low.map(d=>esc(DOC_TYPES[d.type])+' '+docScore(s,d)+'% (below '+LOW_CONF+'%)').join(' | ')}. Open the original, compare it with the values read, and fix any that are wrong in 3 · Documents.${acc?'':' The app will not fill this section from these documents until you do one of the following.'}</div>
+    <label class="consent" style="margin:6px 0 0"><input type="checkbox" ${m.verified?'checked':''} onchange="setvR('${p}verified',this.checked)"><span>Manually verified: I compared these values with the original document and they are correct.</span></label>
+    <label class="consent" style="margin:4px 0 0"><input type="checkbox" ${m.override?'checked':''} onchange="setvR('${p}override',this.checked)"><span>Override: proceed with the values as read. My reason is recorded in the report.</span></label>
+    ${m.override?`<div class="field" style="margin:6px 0 0"><label>Reason for override (minimum 10 characters)</label><textarea rows="2" onchange="setvR('${p}note',this.value)">${esc(m.note||'')}</textarea></div>`:''}`;
+  }
+  if(ed.length) h+=`<div style="margin-top:6px"><b>Edited by you:</b> ${ed.map(e=>esc(e.label)+': '+esc(String(e.from===''?'(blank)':e.from))+' → '+esc(String(e.to===''?'(blank)':e.to))).join('; ')}</div>`;
+  return h+'</div>';
+}
+
+/* ---------- section checklists (check marks) ---------- */
+const MK={ok:['✓','var(--green)'],warn:['!','var(--amber)'],bad:['✕','var(--red)'],todo:['○','#8a8576'],info:['i','var(--muted)']};
+function marksHtml(list){ return list.length?`<div class="marks" style="margin:8px 0">${list.map(c=>`<div style="display:flex;gap:8px;padding:2px 0;font-size:13.5px"><span style="flex:none;width:17px;height:17px;border-radius:9px;background:${MK[c.st][1]};color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center">${MK[c.st][0]}</span><span>${esc(c.txt)}</span></div>`).join('')}</div>`:''; }
+function sectionChecks(s,key){
+  const D=s.docs||[], by=t=>D.filter(d=>d.type===t), out=[], add=(st,txt)=>out.push({st,txt}); const dm=DIMS.find(x=>x.key===key);
+  const conf=s.docConfirm||{}; const status=dimStatus(s,key);
+  if(dm&&dm.consent) add(consentOK(s,dm)?'ok':'todo','Applicant consent recorded');
+  const confLine=(docs)=>{ docs.forEach(d=>{ const sc=docScore(s,d), low=docLow(s,d); add(!low?'ok':(dimAccepted(s,key)?'warn':'bad'),DOC_TYPES[d.type]+' read at '+sc+'% confidence'+(low?(dimAccepted(s,key)?' (accepted by you)':' (verify manually)'):'')); }); };
+  if(key==='identity'){
+    const d=by('id')[0]; add(d?'ok':'todo',d?'ID document added':'ID document not added yet');
+    if(d){ const nm=nameMatch(s.applicant.name,d.f.name); add(nm==='match'?'ok':nm==='partial'?'warn':nm==='mismatch'?'bad':'todo','Name on the ID '+(nm==='match'?'matches the application':nm==='partial'?'partly matches the application':nm==='mismatch'?'does not match the application':'not compared'));
+      add(!d.f.expiry?'warn':d.f.expiry<todayISO()?'bad':'ok',!d.f.expiry?'Expiry date not read':d.f.expiry<todayISO()?'ID expired '+d.f.expiry:'ID not expired (to '+d.f.expiry+')');
+      if(d.f.mrzValid!=null) add(d.f.mrzValid?'ok':'bad',d.f.mrzValid?'Machine-readable zone check digits valid':'Machine-readable zone check digits failed'); confLine([d]); }
+    add(conf.idPhoto?'ok':'todo','ID photo compared with the applicant (you)');
+  }
+  if(key==='credit'){
+    const d=by('credit')[0]; add(d?'ok':'todo',d?'Credit report added':'Credit report not added yet');
+    if(s.credit.score!==''&&s.credit.score!=null&&s.criteria.minCredit!=='') add(Number(s.credit.score)>=Number(s.criteria.minCredit)?'ok':'bad','Score '+s.credit.score+(Number(s.credit.score)>=Number(s.criteria.minCredit)?' meets':' is below')+' the locked minimum of '+s.criteria.minCredit);
+    if(d){ if(d.f.reportDate){ const a=ageDays(d.f.reportDate); add(a<=30?'ok':'warn','Report dated '+d.f.reportDate+(a<=30?' (within 30 days)':' ('+a+' days old)')); } else add('warn','Report date not read');
+      add(d.nameHit===true?'ok':d.nameHit===false?'warn':'todo',d.nameHit===true?'Applicant name found in the report':d.nameHit===false?'Applicant name not found in the report text':'Name not compared'); confLine([d]); }
+    const dc=s.docCheck; add(!dc?'todo':dc.tier==='clean'?'ok':dc.tier==='high'?'bad':'warn',!dc?'Authenticity check not run':'Authenticity check: '+TIER_LABEL[dc.tier]);
+    add(isSourceVerified(s)?'ok':'todo','Confirmed at the source (live login or direct pull)');
+  }
+  if(key==='income'){
+    const ps=by('paystub'); add(ps.length>=2?'ok':ps.length===1?'warn':'todo',ps.length>=2?ps.length+' paystubs added':ps.length===1?'Only one paystub added':'No paystubs added');
+    if(ps.length){ add(ps.some(d=>(d.notes||[]).some(n=>n.lvl==='bad'))?'bad':'ok',ps.some(d=>(d.notes||[]).some(n=>n.lvl==='bad'))?'Paystub arithmetic does not add up':'Paystub arithmetic is consistent (gross, deductions, net, year to date)');
+      add(ps.every(d=>d.f.payDate&&ageDays(d.f.payDate)<=60)?'ok':'warn',ps.every(d=>d.f.payDate&&ageDays(d.f.payDate)<=60)?'Paystubs are within 60 days':'A paystub is over 60 days old or undated'); }
+    const lt=by('letter')[0]; if(lt&&lt.f.annual&&ps.length){ const m=ps.filter(d=>d.f.monthly); if(m.length){ const pa=m.reduce((a,d)=>a+d.f.monthly,0)/m.length*12; const df=Math.abs(lt.f.annual-pa)/pa; add(df>0.2?'warn':'ok',df>0.2?'Letter salary differs from paystubs by '+Math.round(df*100)+'%':'Letter salary agrees with paystubs'); } }
+    const bk=by('bank')[0]; if(bk&&ps.length){ const nets=ps.map(d=>d.f.net).filter(Boolean); const hit=nets.some(n=>(bk.f.payroll||[]).some(p=>Math.abs(p.amt-n)/n<0.03)); if(nets.length) add(hit?'ok':'warn',hit?'A paystub net amount matches a bank payroll deposit':'No bank deposit matches a paystub net amount'); }
+    const est=incomeEstimate(s); add(s.income.monthly!==''&&s.income.monthly!=null?'ok':(est?'warn':'todo'),s.income.monthly!==''&&s.income.monthly!=null?'Monthly income recorded ('+fmtMoney(s.income.monthly)+')':est?'Estimate ready, not applied yet':'No income documents read yet');
+    add(s.income.sufficient?'ok':'todo','Affordability yes/no answered (you)');
+    confLine(D.filter(d=>DIM_DOCS.income.includes(d.type)));
+  }
+  if(key==='employment'){
+    const lt=by('letter')[0], ps=by('paystub')[0]; add(lt||ps?'ok':'todo',lt||ps?'Employment letter or paystub added':'No employment document added');
+    if(lt&&ps){ const same=orgSame(lt.f.employer,ps.f.employer); add(same===true?'ok':same===false?'bad':'todo',same===true?'Employer name agrees on letter and paystub':same===false?'Employer name differs between letter and paystub':'Employer names not compared'); }
+    if(lt){ const nr=nameMatch(s.applicant.name,lt.f.employee); if(nr) add(nr==='match'?'ok':nr==='partial'?'warn':'bad','Name on the letter '+(nr==='match'?'matches':nr==='partial'?'partly matches':'does not match')+' the application'); }
+    confLine(D.filter(d=>DIM_DOCS.employment.includes(d.type)));
+    add(s.prelim?(s.prelim.result==='pass'?'ok':s.prelim.result==='fail'?'bad':'warn'):'todo',s.prelim?'Preliminary check (payslip + web): '+({pass:'passed',fail:'documents disagree',inconclusive:'inconclusive, email the employer'})[s.prelim.result]+' ('+s.prelim.score+'/100)':'Preliminary check (payslip + web) not run');
+    add(s.mail&&s.mail.employer&&s.mail.employer.sentAt?'ok':'todo','Verification email sent to the employer');
+    add(conf.employer?'ok':'todo','Employer confirmed directly (you)');
+  }
+  if(key==='references'){
+    const ls=by('lease')[0]; add(ls?'ok':'todo',ls?'Previous lease on file':'No previous lease added (optional)'); if(ls) confLine([ls]);
+    add(s.mail&&s.mail.landlord&&s.mail.landlord.sentAt?'ok':'todo','Reference email sent to the landlord');
+    add(status!=='unchecked'?'ok':'todo','Landlord reference outcome recorded (you)');
+  }
+  if(key==='ltb'){ add(s.ltbAuto?'ok':'todo',s.ltbAuto?'Open-data search run '+fmtDate(s.ltbAuto.ranAt):'Open-data search not run'); if(s.ltbAuto) add(s.ltbAuto.flagged?'bad':'ok',s.ltbAuto.flagged?'Possible match found: review it':'No adverse match in the open data'); add(status!=='unchecked'?'ok':'todo','Result recorded'); }
+  if(key==='court'||key==='bankruptcy'||key==='police'){
+    const d=D.find(x=>(DIM_DOCS[key]||[]).includes(x.type)); const nm0={bankruptcy:'OSB search result',court:'Court search result',police:'Police record check'}[key];
+    add(d?'ok':'todo',d?nm0+' added':nm0+' not added yet (do the official search yourself, or ask the applicant for the certificate)');
+    if(d){ const sn=d.f.subject?nameMatch(s.applicant.name,d.f.subject):(d.nameHit===true?'match':d.nameHit===false?'notfound':null); add(sn==='match'?'ok':sn==='partial'?'warn':sn?'bad':'todo','Name on the document '+(sn==='match'?'matches the application':sn==='partial'?'partly matches':sn==='mismatch'||sn==='notfound'?'does not match or was not found':'not compared'));
+      add(d.f.result==='none'?'ok':d.f.result==='found'?'bad':'warn','Result read: '+(RESULT_LABEL[d.f.result]||'not read'));
+      if(d.f.date){ const a=ageDays(d.f.date); add(a<=30?'ok':'warn','Dated '+d.f.date+(a<=30?' (within 30 days)':' ('+a+' days old)')); }
+      confLine([d]); }
+    add(status!=='unchecked'?'ok':'todo','Result recorded in the check');
+  }
+  return out;
+}
+function sectionChecksHtml(s,key){ return marksHtml(sectionChecks(s,key)); }
+
+/* ---------- cross-checks and estimates ---------- */
+function ageDays(iso0){ return Math.round((Date.now()-new Date(iso0+'T12:00:00'))/86400000); }
+function incomeEstimate(s){
+  const D=s.docs||[]; const ps=D.filter(d=>d.type==='paystub'&&d.f.monthly);
+  if(ps.length) return {monthly:Math.round(ps.reduce((a,d)=>a+d.f.monthly,0)/ps.length*100)/100,basis:'Paystubs ('+ps.length+'), gross pay annualized'};
+  const l=D.find(d=>d.type==='letter'&&d.f.annual); if(l) return {monthly:Math.round(l.f.annual/12*100)/100,basis:'Employment letter, stated salary'};
+  const n=D.find(d=>d.type==='noa'&&d.f.totalIncome); if(n) return {monthly:Math.round(n.f.totalIncome/12*100)/100,basis:'Notice of Assessment '+(n.f.year||'')+', total income / 12 (prior year)'};
+  const t=D.find(d=>d.type==='t4'&&d.f.employment); if(t) return {monthly:Math.round(t.f.employment/12*100)/100,basis:'T4 '+(t.f.year||'')+', employment income / 12 (prior year)'};
+  return null;
+}
+function docChecks(s){
+  const D=s.docs||[]; const out=[]; const add=(lvl,txt,ids)=>out.push({lvl,txt,ids:ids||[]}); const app=s.applicant.name; const by=t=>D.filter(d=>d.type===t);
+  D.forEach(d=>{
+    const nm=d.f.name||d.f.employee||d.f.tenant; let r=null;
+    if(nm&&app) r=nameMatch(app,nm); else if(d.nameHit===true) r='match'; else if(d.nameHit===false) r='notfound';
+    const L=DOC_TYPES[d.type];
+    if(d.type!=='other'){
+      if(r==='match') add('ok',L+': name matches the application.',[d.id]);
+      else if(r==='partial') add('warn',L+': name only partly matches ("'+(nm||'')+'"). Compare by eye.',[d.id]);
+      else if(r==='mismatch') add('bad',L+': the applicant\'s name does not match (document says "'+nm+'").',[d.id]);
+      else if(r==='notfound') add('warn',L+': the applicant\'s name was not found in the text. Check the document by eye.',[d.id]);
+    }
+    (d.notes||[]).forEach(n=>add(n.lvl,L+': '+n.txt,[d.id]));
+    if(d.auth&&d.auth.tier==='high') add('bad',L+' "'+d.fileName+'": signs of editing ('+d.auth.flags.filter(x=>x.level!=='info').map(x=>x.title).join('; ')+').',[d.id]);
+    else if(d.auth&&d.auth.tier==='warn') add('warn',L+' "'+d.fileName+'": '+d.auth.flags.filter(x=>x.level!=='info').map(x=>x.title).join('; ')+'.',[d.id]);
+    else if(d.auth&&d.auth.tier==='clean') add('ok',L+': no signs of editing in the file history.',[d.id]);
+    if(['osb','court','police'].includes(d.type)){ if(d.f.result==='found') add('warn',L+': the document reports a record. Read it yourself; this is for your review, not an automatic decision.',[d.id]); else if(d.f.result==='none') add('ok',L+': reports no record.',[d.id]); else add('warn',L+': the result could not be read clearly.',[d.id]); if(d.f.date&&ageDays(d.f.date)>30) add('warn',L+' is dated '+d.f.date+' (more than 30 days old).',[d.id]); }
+    if(d.type==='other') add('warn','"'+d.fileName+'" was not recognized. Choose its type in the list, or remove it.',[d.id]);
+  });
+  const idd=by('id')[0];
+  if(!idd) add('info','No ID uploaded yet.'); else {
+    if(idd.f.mrzValid===false) add('bad','ID: the machine-readable zone failed its check digits, which usually means a misread or an altered document.',[idd.id]);
+    else if(idd.f.mrzValid===true) add('ok','ID: machine-readable zone check digits are valid.',[idd.id]);
+    if(!idd.f.expiry) add('warn','ID: expiry date could not be read.',[idd.id]); else if(idd.f.expiry<todayISO()) add('bad','ID: expired on '+idd.f.expiry+'.',[idd.id]); else if(ageDays(idd.f.expiry)>-60) add('warn','ID: expires soon ('+idd.f.expiry+').',[idd.id]); else add('ok','ID: not expired (expires '+idd.f.expiry+').',[idd.id]);
+  }
+  const ps=by('paystub');
+  if(ps.length===1) add('warn','Only one paystub. Two or three consecutive stubs are a better basis.',[ps[0].id]);
+  ps.forEach(d=>{ if(d.f.payDate&&ageDays(d.f.payDate)>60) add('warn','Paystub dated '+d.f.payDate+' is more than 60 days old.',[d.id]); else if(d.f.payDate) add('ok','Paystub dated '+d.f.payDate+' is recent.',[d.id]); if(!d.f.gross) add('warn','Paystub "'+d.fileName+'": gross pay could not be read.',[d.id]); if(d.f.gross&&!(d.notes||[]).some(n=>n.lvl==='bad')&&d.f.net) add('ok','Paystub: gross, deductions, net and year-to-date are consistent.',[d.id]); });
+  const lt=by('letter')[0];
+  if(lt&&ps.length){ const same=orgSame(lt.f.employer,ps[0].f.employer); if(same===true) add('ok','Employer name on the letter and the paystub agree.',[lt.id,ps[0].id]); else if(same===false) add('bad','Employer on the letter ("'+lt.f.employer+'") differs from the paystub ("'+ps[0].f.employer+'").',[lt.id,ps[0].id]); }
+  if(lt&&lt.f.annual&&ps.filter(d=>d.f.monthly).length){ const m=ps.filter(d=>d.f.monthly); const pa=m.reduce((a,d)=>a+d.f.monthly,0)/m.length*12; const diff=Math.abs(lt.f.annual-pa)/pa; if(diff>0.2) add('warn','Salary on the letter ($'+Math.round(lt.f.annual).toLocaleString()+'/yr) differs by '+Math.round(diff*100)+'% from the paystub ($'+Math.round(pa).toLocaleString()+'/yr).',[lt.id]); else add('ok','Salary on the letter is consistent with the paystub.',[lt.id]); }
+  if(lt&&lt.f.phone) add('info','Employment letter lists '+lt.f.phone+'. Do not rely on it: look up the employer\'s published number yourself.',[lt.id]);
+  const bk=by('bank')[0];
+  if(bk&&ps.length&&bk.f.payroll&&bk.f.payroll.length){ const nets=ps.map(d=>d.f.net).filter(Boolean); const hit=nets.some(n=>bk.f.payroll.some(p=>Math.abs(p.amt-n)/n<0.03)); if(nets.length){ if(hit) add('ok','A paystub net amount matches a payroll deposit on the bank statement.',[bk.id]); else add('warn','No payroll deposit on the bank statement matches a paystub net amount.',[bk.id]); } }
+  else if(bk&&ps.length&&!(bk.f.payroll&&bk.f.payroll.length)) add('warn','Bank statement shows no payroll-type deposits to compare with the paystubs.',[bk.id]);
+  if(bk&&bk.f.nsf&&!(bk.notes||[]).length) add('warn','Bank statement: '+bk.f.nsf+' NSF/overdraft mention(s).',[bk.id]);
+  const pa2=ps.filter(d=>d.f.monthly); const noa=by('noa')[0], t4=by('t4')[0];
+  if(pa2.length&&(noa||t4)){ const yr=(noa&&noa.f.totalIncome)||(t4&&t4.f.employment); const cur12=pa2.reduce((a,d)=>a+d.f.monthly,0)/pa2.length*12; if(yr) add('info','Last tax year income $'+Math.round(yr).toLocaleString()+' vs current paystub pace $'+Math.round(cur12).toLocaleString()+'/yr.',[(noa||t4).id]); }
+  const cr=by('credit')[0];
+  if(cr){ if(cr.f.reportDate){ const a=ageDays(cr.f.reportDate); if(a>30) add('warn','Credit report is '+a+' days old. Ask for one from the last 30 days.',[cr.id]); else add('ok','Credit report is recent ('+cr.f.reportDate+').',[cr.id]); } else add('warn','Credit report date could not be read.',[cr.id]);
+    if(cr.f.score==null) add('warn','Credit score could not be read from the report.',[cr.id]); else add('ok','Credit score read from the report ('+cr.f.score+').',[cr.id]); if(cr.f.bankruptcy) add('warn','Credit report mentions bankruptcy or a consumer proposal. Review the report itself.',[cr.id]); if(cr.f.collections>0) add('warn','Credit report shows '+cr.f.collections+' collection item(s).',[cr.id]); }
+  D.forEach(d=>{ if(d.type==='other') return; const sc=docScore(s,d); if(sc<LOW_CONF) add('warn',DOC_TYPES[d.type]+' "'+d.fileName+'": reading confidence is '+sc+'% (below '+LOW_CONF+'%). Verify manually in the section it feeds.',[d.id]); else add('ok',DOC_TYPES[d.type]+': read at '+sc+'% confidence.',[d.id]); });
+  const missing=[]; if(!idd) missing.push('ID'); if(!ps.length&&!lt&&!noa&&!t4) missing.push('income proof (paystubs, employment letter, or tax slip)'); if(!cr) missing.push('credit report');
+  if(missing.length) add('info','Not provided yet: '+missing.join(', ')+'.');
+  return out;
+}
+function docFieldRows(d){ return (FIELD_SPEC[d.type]||[]).map(sp=>[sp.l,fmtField(sp,d.f)]); }
+function docSummary(s,d){ const f=docFieldRows(d).filter(r=>r[1]!=null).slice(0,6).map(r=>r[0]+': '+r[1]).join(' | '); return 'Confidence '+docScore(s,d)+'%'+(Object.keys(d.over||{}).length?' (edited by owner: '+Object.keys(d.over).join(', ')+')':'')+(f?' | '+f:''); }
+function manualSummary(s){
+  const out=[]; Object.keys(DIM_DOCS).forEach(k=>{ const low=dimLowDocs(s,k), ed=dimEdited(s,k); if(!low.length&&!ed.length) return; const m=manualState(s,k);
+    let st=''; if(low.length) st=m.verified?'low confidence, manually verified by owner':(m.override&&String(m.note||'').trim().length>=10)?'low confidence, owner override: '+m.note.trim():'low confidence, NOT yet verified'; if(ed.length) st+=(st?'; ':'')+'values edited by owner ('+ed.map(e=>e.label).join(', ')+')'; out.push({section:DIM_NAME[k],state:st}); });
+  return out;
+}
+
+/* ---------- owner edits ---------- */
+function rederive(d){
+  if(d.type==='paystub'){ d.notes=paystubDerive(d.f); }
+  if(d.type==='letter'&&d.f.annual!=null) d.f.payText='$'+Number(d.f.annual).toLocaleString()+' per year';
+}
+function setDocField(id,k,raw){
+  const s=cur(); const d=(s.docs||[]).find(x=>x.id===id); if(!d) return; const sp=(FIELD_SPEC[d.type]||[]).find(x=>x.k===k); if(!sp) return;
+  let v=String(raw).trim();
+  if(sp.t==='$'||sp.t==='num'){ if(v===''){ v=null; } else { const n=dnum(v); if(n==null){ toast('Enter a number'); render(); return; } v=n; } }
+  else if(sp.t==='date'){ if(v===''){ v=null; } else if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){ const dd=firstDate(v); if(!dd){ toast('Use the date format YYYY-MM-DD'); render(); return; } v=dd; } }
+  else if(sp.t==='freq'||sp.t==='result'){ v=v||null; }
+  else if(v==='') v=null;
+  const prior=(d.over&&d.over[k])?d.over[k].from:(d.f[k]==null?'':d.f[k]);
+  if(String(prior)===String(v==null?'':v)){ if(d.over&&d.over[k]) delete d.over[k]; d.f[k]=v==null?undefined:v; rederive(d); s.updatedAt=nowISO(); save(); render(); return; }
+  d.over=d.over||{}; d.over[k]={from:prior,to:v==null?'':v,at:nowISO()}; d.f[k]=v==null?undefined:v; rederive(d);
+  s.updatedAt=nowISO(); save(); render(); toast('Value edited. It is flagged as an owner edit.');
+}
+function resetDocField(id,k){ const s=cur(); const d=(s.docs||[]).find(x=>x.id===id); if(!d||!d.over||!d.over[k]) return; const f=d.over[k].from; d.f[k]=(f===''||f==null)?undefined:f; delete d.over[k]; rederive(d); s.updatedAt=nowISO(); save(); render(); }
+
+/* ---------- apply to checks ---------- */
+async function applyDocs(){
+  const s=cur(); if(!s) return; const D=s.docs||[]; const by=t=>D.filter(d=>d.type===t); const log=[]; const today=todayISO();
+  const conf=s.docConfirm||{}; const cons=k=>!!(s.consents&&s.consents[k]&&s.consents[k].given);
+  s.checks=s.checks||{};
+  const blocked=(key,label)=>{ if(dimBlocked(s,key)){ log.push(label+': skipped, '+dimLowDocs(s,key).map(d=>DOC_TYPES[d.type]+' '+docScore(s,d)+'%').join(', ')+' is below '+LOW_CONF+'%. Verify manually or override in that section first.'); return true; } return false; };
+  const idd=by('id')[0];
+  if(idd&&!blocked('identity','Identity')){
+    const nm=nameMatch(s.applicant.name,idd.f.name), exp=idd.f.expiry, expired=!!exp&&exp<today, bad=idd.f.mrzValid===false;
+    const ok=nm==='match'&&!!exp&&!expired&&!bad;
+    const status=(nm==='mismatch'||expired||bad)?'concern':(ok&&conf.idPhoto?'clear':'unchecked');
+    s.checks.identity={status,source:'ID copy supplied by applicant',date:today,note:'Auto-read from '+(idd.f.kind||'ID')+' copy ('+docScore(s,idd)+'% confidence'+(dimAccepted(s,'identity')&&dimLowDocs(s,'identity').length?', accepted by owner':'')+'): name '+(nm||'not read')+', '+(exp?'expires '+exp+(expired?' (EXPIRED)':''):'expiry not read')+(bad?'; machine-readable zone failed its check digits':'')+'.'+(ok&&!conf.idPhoto?' Tick "I compared the ID photo with the applicant" to mark this clear.':'')};
+    log.push('Identity: '+(status==='clear'?'clear':status==='concern'?'concern':'noted, waiting for your photo comparison'));
+  }
+  const cr=by('credit')[0];
+  if(cr){
+    if(!cons('credit')) log.push('Credit: skipped, record the credit-check consent first');
+    else if(!blocked('credit','Credit')){
+      if(cr.f.score!=null) s.credit.score=String(cr.f.score);
+      s.checks.credit={status:'unchecked',source:cr.f.bureau==='TransUnion'?'TransUnion Canada (applicant-supplied)':'Equifax Canada (applicant-supplied)',date:cr.f.reportDate||today,note:'Auto-read from uploaded report ('+docScore(s,cr)+'% confidence)'+(cr.f.score==null?'; score could not be read, enter it':'')+(cr.f.collections?'; '+cr.f.collections+' collection item(s)':'')+'.'};
+      log.push('Credit: '+(cr.f.score!=null?'score '+cr.f.score+' filled in':'score not found'));
+      const mem=DOC_MEM[cr.id];
+      if(mem&&mem.file&&/\.pdf$/i.test(cr.fileName)){ try{ await runDocCheck(mem.file); log.push('Credit report authenticity check run'); }catch(e){} }
+    }
+  }
+  const est=incomeEstimate(s);
+  if(est){ if(!cons('credit')) log.push('Income: skipped, income is collected alongside the credit check (consent needed)'); else if(!blocked('income','Income')){ s.income.monthly=String(est.monthly); s.income.basis=est.basis+(dimEdited(s,'income').length?', with owner edits':''); log.push('Income: '+fmtMoney(est.monthly)+'/month ('+est.basis+'). Your yes/no on affordability is still yours to answer.'); } }
+  const lt=by('letter')[0], ps=by('paystub')[0];
+  if(lt||ps){
+    if(!cons('employment')) log.push('Employment: skipped, record the employer-contact consent first');
+    else if(!blocked('employment','Employment')){
+      setBusy('Checking the employer online...'); try{ await computePrelim(s); }catch(e){ console.error(e); }
+      const ev=employmentEvidence(s); const emp=(lt&&lt.f.employer)||(ps&&ps.f.employer)||'';
+      s.checks.employment={status:ev.status,source:ev.source,date:today,note:ev.note,prelim:ev.prelim};
+      s.mail=s.mail||{}; const e0=s.mail.employer||(s.mail.employer={}); if(!e0.org&&emp) e0.org=emp; if(!e0.title&&lt&&lt.f.title) e0.title=lt.f.title; if(!e0.start&&lt&&lt.f.start) e0.start=lt.f.start;
+      log.push('Employment: '+ev.log+(s.prelim?' (preliminary score '+s.prelim.score+'/100)':''));
+    }
+  }
+  [['osb','bankruptcy','public','OSB Bankruptcy and Insolvency search','Bankruptcy'],['court','court','public','Ontario Courts Public Portal (Toronto region)','Court records'],['police','police','police','Applicant-obtained police record check','Police record check']].forEach(([ty,key,cn,src,lab])=>{
+    const d=by(ty)[0]; if(!d) return; if(!cons(cn)) { log.push(lab+': skipped, record the matching consent first'); return; } if(blocked(key,lab)) return;
+    const sn=d.f.subject?nameMatch(s.applicant.name,d.f.subject):(d.nameHit===true?'match':d.nameHit===false?'notfound':null); const fresh=d.f.date&&ageDays(d.f.date)<=30;
+    const status=d.f.result==='found'?'concern':(d.f.result==='none'&&(sn==='match')&&fresh?'clear':'unchecked');
+    s.checks[key]={status,source:src,date:d.f.date||today,note:'Auto-read from the uploaded document ('+docScore(s,d)+'% confidence): '+(RESULT_LABEL[d.f.result]||'result not read')+(sn&&sn!=='match'?'; name '+(sn==='partial'?'partly matches':'does not match or was not found'):'')+(d.f.date&&!fresh?'; dated '+d.f.date+' (over 30 days)':'')+'.'};
+    log.push(lab+': '+(status==='clear'?'clear':status==='concern'?'concern, a record is reported: review it':'noted, not cleared (name or date needs your check)'));
+  });
+  const ls=by('lease')[0];
+  if(ls){ s.mail=s.mail||{}; const l0=s.mail.landlord||(s.mail.landlord={}); if(!l0.org&&ls.f.landlord) l0.org=ls.f.landlord; if(!l0.address&&ls.f.address) l0.address=ls.f.address; if(!l0.from&&ls.f.start) l0.from=ls.f.start; if(!l0.to&&ls.f.end) l0.to=ls.f.end; log.push('Rental history: landlord email panel prefilled from the lease. A lease is not a reference, so contact the landlord.'); }
+  if(!log.length) log.push('Nothing to apply yet. Add documents first.');
+  DOC_ST.applied=log; s.updatedAt=nowISO(); save(); render(); toast('Applied to the checks');
+}
+
+/* ---------- panel ---------- */
+function privacyBannerHtml(){
+  return `<div role="note" style="background:#E3EFE7;border:2px solid var(--green);border-radius:4px;padding:12px 14px;margin:0 0 12px">
+    <div style="font-weight:700;font-size:16px;color:#1f4a35">🔒 Your uploaded data stays in your browser at all times.</div>
+    <div style="margin-top:4px"><b>Uploaded files are never transmitted to any server and the files themselves are never saved.</b> They are read on this device and discarded. Only the extracted fields (names, amounts, dates) are kept, in this browser's own storage on your device, until you delete the screening. They are not sent to us or anyone else.</div>
+    <div class="hint" style="margin:6px 0 0">The only things that leave your device are public lookups that contain no applicant data: the employer's name and city for the web search, and downloads of the OCR and PDF tools and the public LTB catalogue.</div></div>`;
+}
+function docCardHtml(s,d){
+  const sc=docScore(s,d), fc=fieldConfs(s,d), low=docLow(s,d); const spec=FIELD_SPEC[d.type]||[];
+  const feeds=Object.keys(DIM_DOCS).filter(k=>DIM_DOCS[k].includes(d.type));
+  const fields=spec.filter(sp=>!(sp.t==='mrz'&&d.f[sp.k]==null)).map(sp=>{
+    const v=specVal(sp,d.f); const edited=d.over&&d.over[sp.k]; const c=fc[sp.k];
+    let input;
+    if(sp.t==='ro'||sp.t==='mrz'||sp.t==='derived') input=`<div style="padding:7px 0;${v==null||v===''?'color:var(--amber)':''}">${v==null||v===''?'not found':esc(fmtField(sp,d.f))}</div>`;
+    else if(sp.t==='result') input=`<select onchange="setDocField('${d.id}','${sp.k}',this.value)"><option value="">not found</option>${Object.keys(RESULT_LABEL).map(k=>`<option value="${k}" ${d.f[sp.k]===k?'selected':''}>${RESULT_LABEL[k]}</option>`).join('')}</select>`;
+    else if(sp.t==='freq') input=`<select onchange="setDocField('${d.id}','${sp.k}',this.value)"><option value="">not found</option>${Object.keys(FREQ_LABEL).map(k=>`<option value="${k}" ${d.f[sp.k]===k?'selected':''}>${FREQ_LABEL[k]}</option>`).join('')}</select>`;
+    else input=`<input type="text" value="${esc(v==null?'':v)}" placeholder="not found" style="${(v==null||v==='')?'border-color:var(--amber)':''}" onchange="setDocField('${d.id}','${sp.k}',this.value)">`;
+    return `<div><div class="hint" style="margin:0 0 2px;text-transform:uppercase;font-size:11px;letter-spacing:.04em;display:flex;justify-content:space-between;gap:6px"><span>${esc(sp.l)}${sp.c?' *':''}</span><span>${c!=null?`<b style="color:${confColor(c)}">${c}%</b>`:''}</span></div>${input}${edited?`<div class="hint" style="margin:2px 0 0;color:var(--amber)">Edited by you (was ${esc(String(edited.from===''?'blank':edited.from))}) <a href="#" onclick="resetDocField('${d.id}','${sp.k}');return false">undo</a></div>`:''}</div>`;
+  }).join('');
+  const marks=docChecks(s).filter(c=>c.ids.includes(d.id)).map(c=>({st:c.lvl,txt:c.txt}));
+  return `<div class="dim" style="${low?'border-color:var(--red)':''}"><div class="dim-h"><div><b>${esc(DOC_TYPES[d.type])}</b> ${d.type==='other'?'':confChip(sc)}<span class="badge">${esc(d.fileName)} · ${d.method==='ocr'?'read by OCR (engine '+(d.conf!=null?d.conf:'?')+'%)':'text read'}</span></div>
+      <div class="actions noprint" style="display:flex;gap:6px;align-items:center"><select style="width:auto" onchange="reclassifyDoc('${d.id}',this.value)">${Object.keys(DOC_TYPES).map(k=>`<option value="${k}" ${d.type===k?'selected':''}>${esc(DOC_TYPES[k])}</option>`).join('')}</select><button class="small danger" onclick="removeDoc('${d.id}')">Remove</button></div></div>
+    ${low?`<div class="note" style="border-left:4px solid var(--red)"><b>Low confidence (${sc}%).</b> Compare each value with the original and fix any that are wrong. Then mark the section manually verified${feeds.length?' ('+feeds.map(k=>DIM_NAME[k]).join(', ')+')':''}.</div>`:''}
+    ${spec.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 14px;margin-top:8px">${fields}</div><div class="hint" style="margin-top:6px">* critical field. Percentages show how sure the reader is of each value. Type over a value to correct it; it is then flagged as an owner edit.</div>`:''}
+    ${marksHtml(marks)}
+    ${d.auth&&d.auth.flags.length?`<div class="hint">File check: ${d.auth.flags.map(x=>esc(x.title)).join('; ')}</div>`:''}</div>`;
+}
+function docsPanelHtml(s){
+  const D=s.docs||[]; const checks=docChecks(s).filter(c=>!c.ids.length||true); const est=incomeEstimate(s); const conf=s.docConfirm||{};
+  const needs=Object.keys(DIM_DOCS).filter(k=>dimBlocked(s,k));
+  return `<div class="panel"><div class="sec-no">3 · Documents</div><h3>Read documents automatically</h3>
+    ${privacyBannerHtml()}
+    <p class="hint">Add what the applicant gave you: ID, paystubs, employment letter, tax slips, credit report, bank statement, previous lease. The app recognizes each one, reads it on this computer, gives every value a confidence percentage, cross-checks the documents and proposes values for the checks below. Nothing is uploaded. Only the extracted fields are kept, not the files.</p>
+    <label class="dropzone" ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="display:block;border:2px dashed var(--line);border-radius:4px;padding:18px;text-align:center;cursor:pointer;background:#fff">
+      <b>Drop files here or click to choose</b><div class="hint" style="margin:4px 0 0">PDF, photo (JPG/PNG) or CSV. Photos and scans are read with OCR, which can take a few seconds.</div>
+      <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.csv,.tsv,.txt,application/pdf,image/*,text/csv" style="display:none" onchange="readDocFiles(this.files);this.value=''"></label>
+    <div id="docBusy" class="hint" style="min-height:18px">${DOC_ST.busy?'Reading...':''}</div>
+    ${needs.length?`<div class="note" style="border-left:4px solid var(--red)"><b>Manual verification needed:</b> ${needs.map(k=>DIM_NAME[k]).join(', ')}. Confidence is under ${LOW_CONF}% for at least one document. Verify or override in the section itself (4 · Checks).</div>`:''}
+    ${D.map(d=>docCardHtml(s,d)).join('')}
+    ${checks.length?`<h4 style="margin:12px 0 6px;font-family:'Source Serif 4',serif">Cross-checks</h4>${marksHtml(checks.map(c=>({st:c.lvl,txt:c.txt})))}`:''}
+    ${est?`<div class="note"><b>Income estimate:</b> ${fmtMoney(est.monthly)}/month (${esc(est.basis)})${s.rental.rent?'. Rent-to-income '+Math.round(Number(s.rental.rent)/est.monthly*100)+'% (information only)':''}.</div>`:''}
+    ${D.length?`<div class="consent" style="margin-top:10px"><input type="checkbox" ${conf.idPhoto?'checked':''} onchange="setvR('docConfirm.idPhoto',this.checked)"><span>I compared the ID photo with the applicant (in person or on video) and it matches.</span></div>
+      <div class="consent"><input type="checkbox" ${conf.employer?'checked':''} onchange="setvR('docConfirm.employer',this.checked)"><span>I confirmed the employer directly (call or email to a number I looked up myself).</span></div>
+      <p class="hint">Documents show what the applicant provided. The two boxes are your own verification, and the app will not mark Identity or Employment clear without them.</p>
+      <div class="actions noprint"><button class="primary" onclick="applyDocs()">Apply to the checks below</button></div>`:''}
+    ${DOC_ST.applied.length?`<div class="note"><b>Applied:</b><ul style="margin:4px 0 0;padding-left:18px">${DOC_ST.applied.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}
+  </div>`;
+}
+
+function prelimSummary(s){ const p=s.prelim; if(!p) return null; return {result:p.result,score:p.score,employer:p.employer,provider:p.web?p.web.provider:'',level:p.web?p.web.level:'',signals:p.signals.map(x=>({st:x.st,txt:x.txt})),sites:p.web?p.web.rows.slice(0,3).map(r=>r.host):[],at:p.at}; }
+
+/* ======================= PRELIMINARY EMPLOYMENT VERIFICATION ======================= */
+/* Step 1 of employment verification. Uses the payslip data (arithmetic, CPP/EI/tax plausibility, year-to-date,
+   name, employer) and a public web search for the EMPLOYER only (never the applicant). If it passes, the check
+   can be marked clear as "preliminary". If not, the app points to the email to the employer.
+   It shows the employer exists and the payslip is internally plausible. It cannot prove the applicant works there. */
+function hostOf(u){ try{ return new URL(/^https?:/.test(u)?u:'https://'+u).hostname.replace(/^www\./,''); }catch(e){ return ''; } }
+function prelimInputs(s){
+  const D=s.docs||[], lt=D.find(d=>d.type==='letter'), ps=D.find(d=>d.type==='paystub'), t4=D.find(d=>d.type==='t4'); const o=s.prelimIn||{};
+  return {name:o.name!=null&&o.name!==''?o.name:((lt&&lt.f.employer)||(ps&&ps.f.employer)||(t4&&t4.f.employer)||''),
+          city:o.city!=null&&o.city!==''?o.city:((lt&&lt.f.city)||(ps&&ps.f.city)||''),
+          phone:o.phone!=null&&o.phone!==''?o.phone:((lt&&lt.f.phone)||''), site:o.site||''};
+}
+async function fetchJson(url,opt){ const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),9000); try{ const r=await fetch(url,Object.assign({signal:ac.signal},opt||{})); if(!r.ok){ const e=new Error('HTTP '+r.status); e.status=r.status; throw e; } return await r.json(); } finally{ clearTimeout(tm); } }
+async function webLookup(name,city){
+  const q=name+(city?' '+city:'')+' Ontario'; const out={query:q,provider:'',results:[],error:'',at:nowISO()};
+  if(/^https?:/.test(location.protocol)){
+    try{ const j=await fetchJson('/api/employer-search',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({q})}); out.provider=j.provider||'search service'; out.results=(j.results||[]).slice(0,8); if(out.results.length) return out; }
+    catch(e){ if(e.status&&e.status!==501&&e.status!==404) out.error='Search service error ('+e.status+')'; }
+  }
+  const res=[];
+  try{ const j=await fetchJson('https://www.wikidata.org/w/api.php?action=wbsearchentities&search='+encodeURIComponent(name)+'&language=en&format=json&origin=*&limit=4'); (j.search||[]).forEach(x=>res.push({title:x.label,url:'https://www.wikidata.org/wiki/'+x.id,snippet:x.description||''})); }catch(e){}
+  try{ const j=await fetchJson('https://nominatim.openstreetmap.org/search?format=json&limit=4&countrycodes=ca&q='+encodeURIComponent(name+(city?' '+city:''))); (j||[]).forEach(x=>res.push({title:(x.display_name||'').split(',')[0]+' (OpenStreetMap)',url:'https://www.openstreetmap.org/'+x.osm_type+'/'+x.osm_id,snippet:x.display_name||''})); }catch(e){}
+  out.results=res; out.provider=res.length?'open data only (Wikidata, OpenStreetMap)':(out.provider||'none reachable');
+  return out;
+}
+const LISTING_RX=/linkedin\.com\/company|canada411|yellowpages|bbb\.org|opencorporates|ised-isde|ic\.gc\.ca|dnb\.com|zoominfo|glassdoor|indeed\.com\/cmp|wikidata|wikipedia|openstreetmap|google\.[a-z.]+\/maps/i;
+function scoreWeb(name,city,phone,site,results){
+  const toks=orgTokens(name), digits=String(phone||'').replace(/\D/g,'').slice(-10), cityN=normName(city||''), siteHost=hostOf(site);
+  const rows=(results||[]).map(r=>{ const host=hostOf(r.url), hostN=host.replace(/[^a-z0-9]/g,''); const text=normName((r.title||'')+' '+(r.snippet||''));
+    const nameHit=toks.length>0&&toks.every(t=>text.includes(t)||hostN.includes(t));
+    const domainHit=toks.length>0&&toks.filter(t=>hostN.includes(t)).length>=Math.min(2,toks.length);
+    return {title:r.title||'',url:r.url||'',snippet:String(r.snippet||'').slice(0,160),host,nameHit,domainHit,listing:LISTING_RX.test(r.url||''),
+      cityHit:!!cityN&&text.includes(cityN),phoneHit:digits.length===10&&((r.title||'')+' '+(r.snippet||'')).replace(/\D/g,'').includes(digits),siteMatch:!!siteHost&&host.endsWith(siteHost)}; });
+  let score=0; if(rows.some(r=>(r.domainHit&&r.nameHit)||r.siteMatch)) score+=35;
+  const hosts=new Set(rows.filter(r=>r.nameHit).map(r=>r.host)); score+=hosts.size>=2?20:hosts.size===1?8:0;
+  if(rows.some(r=>r.nameHit&&r.cityHit)) score+=15; if(rows.some(r=>r.phoneHit)) score+=20; if(rows.some(r=>r.nameHit&&/linkedin\.com\/company/.test(r.url))) score+=10;
+  score=Math.min(100,score); return {score,level:score>=60?'found':score>=30?'weak':'none',rows};
+}
+function prelimEvaluate(s,web,inp){
+  const D=s.docs||[], by=t=>D.filter(d=>d.type===t); const ps=by('paystub'), lt=by('letter')[0], bk=by('bank')[0], app=s.applicant.name;
+  const sig=[]; const add=(st,txt)=>sig.push({st,txt}); let pts=0, hard=false, off=false;
+  if(!ps.length) add('todo','No payslip added: only the web search could be used');
+  else{
+    add('ok',ps.length+' payslip'+(ps.length>1?'s':'')+' read');
+    const bad=ps.some(d=>(d.notes||[]).some(n=>n.lvl==='bad'));
+    add(bad?'bad':'ok',bad?'Payslip arithmetic does not add up':'Payslip arithmetic is consistent (gross, deductions, net, year to date)'); if(bad) hard=true; else pts+=15;
+    const pps=ps.map(d=>payrollPlausibility(d.f));
+    [['cpp','CPP deduction'],['ei','EI deduction'],['tax','Income tax deduction']].forEach(([k,lab])=>{
+      const st=pps.some(p=>p[k]&&p[k].st==='off')?'off':pps.every(p=>p[k]&&p[k].st==='ok')?'ok':'missing';
+      if(st==='ok'){ add('ok',lab+' is in the expected range for the gross pay'); pts+=5; }
+      else if(st==='off'){ off=true; add('warn',lab+' is outside the expected range'); }
+      else add('warn','No '+lab.toLowerCase()+' found on the payslip'); });
+    const nr=ps.map(d=>nameMatch(app,d.f.employee)); if(nr.some(x=>x==='mismatch')){ hard=true; add('bad','Name on the payslip does not match the application'); } else if(nr.every(x=>x==='match')){ add('ok','Name on the payslip matches the application'); pts+=10; } else if(nr.some(x=>x==='partial')){ add('warn','Name on the payslip only partly matches'); pts+=4; } else add('todo','Name on the payslip not compared');
+    if(lt){ const same=orgSame(lt.f.employer,ps[0].f.employer); if(same===false){ hard=true; add('bad','Employer on the letter differs from the payslip'); } else if(same===true){ add('ok','Employer name agrees on the letter and the payslip'); pts+=10; } }
+    const srt=ps.filter(d=>d.f.payDate&&d.f.ytd&&d.f.gross).sort((a,b)=>a.f.payDate<b.f.payDate?-1:1);
+    if(srt.length>=2){ let good=true; for(let i=1;i<srt.length;i++){ const gap=Math.round((new Date(srt[i].f.payDate)-new Date(srt[i-1].f.payDate))/86400000); const n=PERIODS[srt[i].f.freq]||26; if(Math.abs(gap-365/n)<=4){ const diff=srt[i].f.ytd-srt[i-1].f.ytd; if(Math.abs(diff-srt[i].f.gross)/srt[i].f.gross>0.03) good=false; } }
+      add(good?'ok':'warn',good?'Year-to-date grows by one pay period between consecutive payslips':'Year-to-date does not grow by one pay period between payslips'); if(good) pts+=5; }
+    if(bk&&bk.f.payroll&&bk.f.payroll.length){ const nets=ps.map(d=>d.f.net).filter(Boolean); const hit=nets.some(n=>bk.f.payroll.some(p=>Math.abs(p.amt-n)/n<0.03)); add(hit?'ok':'warn',hit?'A payslip net amount matches a payroll deposit on the bank statement':'No bank deposit matches a payslip net amount'); if(hit) pts+=5; }
+    const lowDocs=ps.concat(lt?[lt]:[]).filter(d=>docLow(s,d)); if(lowDocs.length&&!dimAccepted(s,'employment')) add('warn','A document was read with low confidence: verify it manually first'); else { add('ok','Documents were read with enough confidence'); pts+=5; }
+  }
+  if(web){ if(web.level==='found'){ add('ok','Employer found online (match score '+web.score+'/100)'); pts+=40; } else if(web.level==='weak'){ add('warn','Only weak evidence of the employer online (match score '+web.score+'/100)'); pts+=18; } else add('warn','Employer not found online'+(web.error?' ('+web.error+')':'')+' (match score '+web.score+'/100)');
+    if(web.rows.some(r=>r.nameHit&&r.cityHit)) add('ok','The search results place the employer in '+(inp.city||'the stated city')); else if(inp.city) add('warn','No result confirmed the employer in '+inp.city);
+    if(inp.phone){ if(web.rows.some(r=>r.phoneHit)) add('ok','The phone number on the letter appears in the search results'); else add('warn','The phone number on the letter did not appear in the search results'); } }
+  const score=Math.min(100,pts);
+  const result=hard?'fail':(!hard&&!off&&ps.length&&web&&web.level==='found'&&score>=75)?'pass':'inconclusive';
+  return {at:nowISO(),employer:inp.name,city:inp.city,result,score,signals:sig,web:web?{level:web.level,score:web.score,provider:web.provider,query:web.query,error:web.error,rows:web.rows.slice(0,6)}:null};
+}
+async function computePrelim(s){
+  const inp=prelimInputs(s); if(!inp.name) return null;
+  const w=await webLookup(inp.name,inp.city); const sc=scoreWeb(inp.name,inp.city,inp.phone,inp.site,w.results);
+  s.prelim=prelimEvaluate(s,Object.assign({},w,sc),inp); return s.prelim;
+}
+async function runPrelim(){
+  const s=cur(); if(!s) return; const inp=prelimInputs(s); if(!inp.name){ toast('Add a payslip or letter, or type the employer name'); return; }
+  PRELIM_ST.busy=true; render(); try{ await computePrelim(s); }catch(e){ console.error(e); toast('Preliminary check failed'); }
+  PRELIM_ST.busy=false; s.updatedAt=nowISO(); save(); render();
+}
+const PRELIM_ST={busy:false};
+function employmentEvidence(s){
+  const D=s.docs||[], by=t=>D.filter(d=>d.type===t); const lt=by('letter')[0], ps=by('paystub')[0]; const conf=s.docConfirm||{}; const pr=s.prelim;
+  const nameR=lt?nameMatch(s.applicant.name,lt.f.employee):null; const same=(lt&&ps)?orgSame(lt.f.employer,ps.f.employer):null; const emp=(lt&&lt.f.employer)||(ps&&ps.f.employer)||'';
+  const base='Auto-read: '+(emp?emp:'employer not read')+(lt&&lt.f.title?', '+lt.f.title:'')+(lt&&lt.f.type?' ('+lt.f.type+')':'')+(lt&&lt.f.start?', since '+lt.f.start:'')+'.';
+  const conflict=nameR==='mismatch'||same===false||(pr&&pr.result==='fail');
+  if(conflict) return {status:'concern',source:lt?'Employment letter':'Preliminary: payslip analysis and public web search',note:base+' Documents or payslip checks disagree: see the cross-checks.',prelim:false,log:'concern (documents or payslip checks disagree)'};
+  if(conf.employer) return {status:'clear',source:'Employer contacted by phone/email',note:base+' Confirmed directly by the owner.',prelim:false,log:'clear (confirmed directly by you)'};
+  if(pr&&pr.result==='pass') return {status:'clear',source:'Preliminary: payslip analysis and public web search',note:base+' PRELIMINARY: payslip checks consistent and employer found online (score '+pr.score+'/100). Not confirmed with the employer. Use the email below to confirm if you want certainty.',prelim:true,log:'clear (preliminary, not confirmed with the employer)'};
+  return {status:'unchecked',source:lt?'Employment letter':'Employer contacted by phone/email',note:base+' Preliminary check '+(pr?pr.result:'not run')+(pr?' (score '+pr.score+'/100)':'')+'. Next step: email the employer (panel below), or tick "I confirmed the employer directly".',prelim:false,log:'not cleared, '+(pr?'preliminary check '+pr.result:'preliminary check not run')+'. Next step: email the employer'};
+}
+function applyPrelim(){ const s=cur(); if(!s) return; const ev=employmentEvidence(s); s.checks=s.checks||{}; s.checks.employment={status:ev.status,source:ev.source,date:todayISO(),note:ev.note,prelim:ev.prelim}; s.updatedAt=nowISO(); save(); render(); toast('Employment check: '+ev.log); }
+function webLinks(inp){
+  const q=encodeURIComponent('"'+inp.name+'"'+(inp.city?' '+inp.city:'')); const L=[['Web search','https://www.google.com/search?q='+q],['Maps','https://www.google.com/maps/search/'+q],['LinkedIn company page','https://www.linkedin.com/search/results/companies/?keywords='+encodeURIComponent(inp.name)],['Federal corporation records','https://www.google.com/search?q='+encodeURIComponent('"'+inp.name+'" site:ised-isde.canada.ca')],['Ontario business listings','https://www.google.com/search?q='+encodeURIComponent('"'+inp.name+'" Ontario corporation profile')]];
+  if(inp.phone) L.push(['Search the letter\'s phone number','https://www.google.com/search?q='+encodeURIComponent('"'+inp.phone+'"')]); return L;
+}
+function prelimPanelHtml(s){
+  const inp=prelimInputs(s), pr=s.prelim, D=s.docs||[]; const hasDocs=D.some(d=>d.type==='paystub'||d.type==='letter');
+  const chipCls={pass:'c-clear',inconclusive:'c-review',fail:'c-concern'}; const lab={pass:'Preliminary pass',inconclusive:'Inconclusive: email the employer',fail:'Fail: documents disagree'};
+  const p='prelimIn.';
+  return `<div style="margin:12px 0;padding:12px;border:1px solid var(--line);background:#F8F5EF;border-radius:4px">
+    <b>Step 1: preliminary check (payslip data + public web search)</b>
+    <p class="hint">Checks the payslip (arithmetic, CPP, EI and tax deductions, year to date, name, employer) and searches the public web for the <i>employer only</i>. The applicant's name is never searched. If it does not pass, use the email below (step 2).</p>
+    <div class="row">${inp2(p+'name','Employer name',inp.name)}${inp2(p+'city','Employer city',inp.city)}${inp2(p+'phone','Employer phone (from the letter)',inp.phone)}${inp2(p+'site','Employer website (optional)',inp.site)}</div>
+    <div class="actions noprint"><button class="primary" ${(inp.name&&!PRELIM_ST.busy)?'':'disabled'} onclick="runPrelim()">${PRELIM_ST.busy?'Searching...':(pr?'Run it again':'Run preliminary check')}</button>
+      ${pr?`<button onclick="applyPrelim()">Use this result for the Employment check</button>`:''}</div>
+    ${!hasDocs?'<p class="hint">Add a paystub or employment letter in 3 · Documents first, or type the employer name and run the web search alone.</p>':''}
+    ${pr?`<div style="margin-top:10px"><span class="chip ${chipCls[pr.result]}">${lab[pr.result]}</span> <b>${pr.score}/100</b> <span class="hint">${esc(fmtDT(pr.at))}</span>
+      ${marksHtml(pr.signals)}
+      ${pr.web?`<div class="hint">Search: ${esc(pr.web.provider||'none')}${pr.web.provider&&/open data only|none/.test(pr.web.provider)?'. No web search service is connected, so small employers often show nothing. That is not a fail: use the email step.':''}</div>
+        ${pr.web.rows.length?`<div class="tablewrap"><table><thead><tr><th>Result</th><th>Matches</th></tr></thead><tbody>${pr.web.rows.map(r=>`<tr><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title||r.host)}</a><div class="hint" style="margin:0">${esc(r.host)} · ${esc(r.snippet)}</div></td><td>${[r.nameHit?'name':'',r.siteMatch?'your site':'',r.domainHit?'domain':'',r.cityHit?'city':'',r.phoneHit?'phone':'',r.listing?'listing':''].filter(Boolean).join(', ')||'-'}</td></tr>`).join('')}</tbody></table></div>`:''}`:''}
+      ${pr.result!=='pass'?`<div class="note"><b>Next step:</b> ${pr.result==='fail'?'The documents disagree. Do not rely on them. ':''}Send the verification email below to the employer, using a phone number or address you look up yourself.</div>`:`<div class="note">Passed on documents and public web evidence only. This shows the employer exists and the payslip is plausible. It does not prove the applicant works there. Email the employer if you want certainty.</div>`}`:''}
+    <div class="hint" style="margin-top:8px">Open these yourself: ${inp.name?webLinks(inp).map(l=>`<a href="${esc(l[1])}" target="_blank" rel="noopener">${esc(l[0])}</a>`).join(' · '):'(enter the employer name)'}</div>
+    <p class="hint"><b>Step 2: email the employer</b> (below) if this check is not a pass, or whenever you want direct confirmation.</p></div>`;
+}
+function inp2(path,label,val){ return `<div class="field"><label>${esc(label)}</label><input type="text" value="${esc(val||'')}" onchange="setvR('${path}',this.value)"></div>`; }
+
+/* ======================= VERIFICATION EMAILS ======================= */
+/* Writes a factual, consent-referenced request to a previous landlord or an employer. Nothing is sent by the app:
+   it opens your own email program (mailto) or copies the text. */
+function mailData(s,kind){ return (s.mail&&s.mail[kind])||{}; }
+function mailSender(s){ return (s.mail&&s.mail.sender)||''; }
+function buildMail(s,kind){
+  const m=mailData(s,kind), a=s.applicant||{}, me=mailSender(s)||'[your name]';
+  const nm=(m.idName||a.name||'[applicant name]').trim();
+  const greet=m.contact?('Hello '+m.contact+','):'Hello,';
+  if(kind==='landlord'){
+    const subject='Rental reference request for '+nm;
+    const body=[greet,'',
+      nm+' has applied to rent a unit from me'+(s.rental&&s.rental.property?' ('+s.rental.property+')':'')+' and gave your name as a previous landlord'+(m.address?' for the tenancy at '+m.address:'')+(m.from||m.to?' ('+(m.from||'?')+' to '+(m.to||'?')+')':'')+'. '+nm+' has agreed in writing that I may contact you for this purpose.',
+      '','If you are able to, could you reply with short answers to the following? Facts only, please.','',
+      '1. Did '+nm+' rent from you, and for what dates?',
+      '2. What was the monthly rent?',
+      '3. Was rent paid in full and on time? If not, roughly how often was it late?',
+      '4. Were any N4, L1 or other notices or LTB applications filed during the tenancy?',
+      '5. Was proper notice given when the tenancy ended, and was the unit left in normal condition apart from ordinary wear?',
+      '6. Would you rent to them again?','',
+      'A reply of just "yes/no" or a line per question is fine. Anything you share will be used only to decide this application and handled as personal information under PIPEDA. If you would rather not answer by email, I can call you at a time that suits you.','',
+      'Thank you for your time,',me].join('\n');
+    return {subject,body,to:m.email||''};
+  }
+  const subject='Employment verification for '+nm;
+  const body=[greet,'',
+    nm+' has applied to rent a unit from me'+(s.rental&&s.rental.property?' ('+s.rental.property+')':'')+' and listed '+(m.org||'your organization')+' as their employer'+(m.title?' (position: '+m.title+')':'')+'. '+nm+' has agreed in writing that I may contact you to confirm employment.',
+    '','Could you please reply confirming, if you are able to:','',
+    '1. Is '+nm+' currently employed by '+(m.org||'your organization')+'?',
+    '2. Position, and employment type (full-time, part-time, contract, permanent)?',
+    '3. Start date'+(m.start?' (they stated '+m.start+')':'')+', and whether the position is ongoing?',
+    '4. Usual work location (address or remote/hybrid)?',
+    '5. Optional, only if '+nm+' authorized it: current regular pay (hourly rate or salary) and typical hours per week.','',
+    'Please reply from an address at your organization. I will use this only to assess the rental application and will protect it as personal information under PIPEDA. I am happy to take a quick call instead.','',
+    'Thank you,',me].join('\n');
+  return {subject,body,to:m.email||''};
+}
+function mailPanelHtml(s,kind){
+  const m=mailData(s,kind); const L=kind==='landlord'; const cons=!!(s.consents&&s.consents.reference&&s.consents.reference.given)&&(!L?!!(s.consents.employment&&s.consents.employment.given):true);
+  const p='mail.'+kind+'.';
+  const mk=buildMail(s,kind);
+  return `<div class="ltb-panel" style="margin:12px 0;padding:12px;border:1px solid var(--line);background:#F8F5EF">
+    <b>${L?'Email the previous landlord':'Email the employer'}</b>
+    <p class="hint">Writes a short, factual request using the applicant's name. Find the ${L?'landlord':'employer'}'s contact details yourself (public listing or company website), not only from the application, then compare. The app does not send anything: it opens your own email program or copies the text.</p>
+    ${cons?'':`<div class="note">Record the applicant's ${L?'reference':'reference and employer'} consent above first.</div>`}
+    <div class="row">${inp('mail.sender','Your name (signature)','text',mailSender(s))}${inp(p+'idName','Name as shown on the ID','text',m.idName||s.applicant.name||'')}</div>
+    <div class="row">${inp(p+'org',L?'Landlord / company':'Employer','text',m.org||'')}${inp(p+'contact','Contact name (optional)','text',m.contact||'')}${inp(p+'email','Their email','text',m.email||'')}</div>
+    <div class="row">${L?inp(p+'address','Tenancy address','text',m.address||'')+inp(p+'from','From','text',m.from||'')+inp(p+'to','To','text',m.to||''):inp(p+'title','Position stated','text',m.title||'')+inp(p+'start','Start date stated','text',m.start||'')}</div>
+    <p class="hint"><b>Subject:</b> ${esc(mk.subject)}</p>
+    <pre style="white-space:pre-wrap;font:12px/1.5 'IBM Plex Mono',monospace;background:#fff;border:1px solid var(--line);padding:10px;max-height:240px;overflow:auto">${esc(mk.body)}</pre>
+    <div class="actions noprint"><button class="primary" ${cons?'':'disabled'} onclick="openMail('${kind}')">Open in my email program</button><button onclick="copyMail('${kind}')">Copy email</button><button onclick="markMailSent('${kind}')">Mark as sent</button></div>
+    ${m.sentAt?`<p class="hint">Marked sent ${esc(fmtDT(m.sentAt))}. When they reply, record the answers in the check below and tick the result.</p>`:''}</div>`;
+}
+function openMail(kind){ const s=cur(); if(!s) return; const mk=buildMail(s,kind);
+  location.href='mailto:'+encodeURIComponent(mk.to).replace(/%40/g,'@')+'?subject='+encodeURIComponent(mk.subject)+'&body='+encodeURIComponent(mk.body); }
+function copyMail(kind){ const s=cur(); if(!s) return; const mk=buildMail(s,kind); const t='Subject: '+mk.subject+'\n\n'+mk.body;
+  const done=()=>toast('Email copied');
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,()=>fallbackCopy(t,done)); } else fallbackCopy(t,done); }
+function fallbackCopy(t,done){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); done();}catch(e){toast('Copy failed');} ta.remove(); }
+function markMailSent(kind){ const s=cur(); if(!s) return; setPath(s,'mail.'+kind+'.sentAt',nowISO()); s.updatedAt=nowISO(); save(); render(); }
 
 /* ======================= LINK TO RENT ROLL ======================= */
 /* Rent Roll opens this page with the applicant and its locked criteria in the URL hash (#rr=...).
@@ -797,7 +1649,7 @@ function buildRentRollPackage(s){
     verifiedAtSource:isSourceVerified(s)?s.sourceVerified.method:null,
     ltb:s.ltbAuto?{flagged:!!s.ltbAuto.flagged,summary:s.ltbAuto.summary,total:s.ltbAuto.total}:null,
     outcome:{computed:e.computed,final:e.final,overridden:e.overridden,reasons:e.reasons,flags:e.flags,missing:e.missing,justification:e.overridden?s.override.justification:''},
-    applicantResponse:s.applicantResponse||''};
+    documents:(s.docs||[]).map(d=>({type:d.type,sha256:d.sha256,read:d.method,confidence:docScore(s,d),edited:Object.keys(d.over||{})})),manualVerification:s.manual||{},employmentVerification:{method:(s.checks&&s.checks.employment&&s.checks.employment.prelim)?'preliminary':((s.docConfirm&&s.docConfirm.employer)?'direct':null),prelimResult:s.prelim?s.prelim.result:null,prelimScore:s.prelim?s.prelim.score:null},applicantResponse:s.applicantResponse||''};
 }
 function canSendToRentRoll(s){ try{ return !!(window.opener && !window.opener.closed && s.source); }catch(e){ return false; } }
 function sendToRentRoll(){
@@ -819,7 +1671,7 @@ function downloadResultFile(){
 }
 function rrPanelHtml(s){
   const e=evaluate(s); const ok=e.final!=='incomplete'; const link=canSendToRentRoll(s);
-  return `<div class="panel"><div class="sec-no">5 · Rent Roll</div><h3>Send the result to Rent Roll</h3>
+  return `<div class="panel"><div class="sec-no">6 · Rent Roll</div><h3>Send the result to Rent Roll</h3>
     <p class="hint">Sends the outcome, score, check results and consents. The credit PDF, your notes and the PDF report stay in this tool.</p>
     ${s.source?`<p class="hint">Linked to a Rent Roll applicant (criteria v${esc(s.source.criteriaVersion)}).</p>`:`<p class="hint">Not opened from Rent Roll, so this downloads a file. In Rent Roll, open the Screening tab and choose "Import a screening result".</p>`}
     ${ok?'':`<div class="note">Finish the screening first${e.missing.length?': '+esc(e.missing.join(', ')):''}.</div>`}
