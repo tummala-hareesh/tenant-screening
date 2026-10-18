@@ -65,7 +65,31 @@ td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 .toast.show{opacity:1}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 a{color:var(--ink)}
+
+.stepper{position:sticky;top:0;z-index:6;background:var(--paper);padding:8px 0 10px;margin:0 0 12px;border-bottom:1px solid var(--line)}
+.steps{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:0;padding:0;list-style:none}
+.stbtn{width:100%;text-align:left;padding:7px 9px;border:1px solid var(--line);border-bottom:3px solid var(--line);border-radius:3px;background:var(--raised);display:block;line-height:1.2;min-height:48px}
+.stbtn .n{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
+.stbtn .l{display:block;font-weight:600;font-size:14px}
+.stbtn .s{display:block;font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stbtn.on{border-color:var(--ink);border-bottom-color:var(--ink);background:#fff}
+.stbtn.done{border-bottom-color:var(--green)}.stbtn.done .n{color:var(--green)}
+.stbtn.warn{border-bottom-color:var(--red)}.stbtn.warn .n{color:var(--red)}
+.stbtn.part{border-bottom-color:var(--amber)}
+.stp{display:none}.stp.on{display:block}
+.stfoot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:6px 0 24px}
+.dimnav{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px}
+.dimnav button{padding:5px 10px;font-size:13px;border-radius:14px;background:var(--raised);border-color:var(--line);display:inline-flex;align-items:center;gap:6px}
+.dimnav button.on{background:var(--ink);color:#F8F5EF;border-color:var(--ink)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8a8576;border:1px solid rgba(255,255,255,.6)}
+.dot.c-clear{background:var(--green)}.dot.c-concern{background:var(--red)}.dot.c-review{background:var(--amber)}.dot.c-na{background:#9a8a66}
+.dimnext{display:flex;justify-content:flex-end;margin:-2px 0 12px}
+@media(max-width:820px){
+  .steps{grid-template-columns:repeat(6,minmax(104px,1fr));overflow-x:auto;padding-bottom:4px}
+  #list{display:flex;gap:8px;overflow-x:auto;align-items:stretch}#list .sec-no{display:none}#list .item{min-width:190px;margin:0}
+}
 @media print{
+  .stp{display:block!important}.stepper,.stfoot,.dimnav,.dimnext{display:none!important}
   .top,#list,.actions,.noprint,.toast{display:none!important}
   .layout{display:block;padding:0}body{background:#fff}.panel{border:0;padding:0}
 }
@@ -119,6 +143,41 @@ const DIMS = [
 /* ======================= STATE ======================= */
 let data = { screenings:[] };
 let ui = { view:'home', id:null, confirmDelete:null };
+const STEPS=[{n:1,l:'Applicant'},{n:2,l:'Criteria'},{n:3,l:'Documents'},{n:4,l:'Checks'},{n:5,l:'Result'},{n:6,l:'Rent Roll'}];
+function stepInfo(s){
+  const e=evaluate(s); const done=DIMS.filter(d=>dimStatus(s,d.key)!=='unchecked').length; const anyConcern=DIMS.some(d=>dimStatus(s,d.key)==='concern');
+  const a=!!(s.applicant.name&&s.rental.property&&s.rental.rent);
+  const docs=(s.docs||[]).length;
+  return {
+    1:{c:a?'done':'',t:a?'Complete':'Name and rental needed'},
+    2:{c:s.criteria.lockedAt?'done':'',t:s.criteria.lockedAt?'Locked':'Not locked'},
+    3:{c:docs?'done':'',t:docs?docs+' read':'Optional'},
+    4:{c:done===DIMS.length?(anyConcern?'warn':'done'):(done?'part':''),t:done+' of '+DIMS.length+' recorded'+(anyConcern?' · concern':'')},
+    5:{c:e.final==='incomplete'?'':(e.final==='met'?'done':(e.final==='not_met'?'warn':'part')),t:OUTCOME_LABEL[e.final]||''},
+    6:{c:s.source&&s.source.sentAt?'done':'',t:s.source?'Linked':'Optional'}
+  };
+}
+function smartStep(s){ const i=stepInfo(s); if(!s.applicant.name||!s.rental.property) return 1; if(!s.criteria.lockedAt) return 2; if(i[4].c===''||i[4].c==='part') return (s.docs||[]).length?4:3; return 5; }
+function stepperHtml(s){
+  const i=stepInfo(s);
+  return `<ol class="steps" role="list">${STEPS.map(st=>`<li><button class="stbtn ${i[st.n].c} ${ui.step===st.n?'on':''}" aria-current="${ui.step===st.n?'step':'false'}" onclick="goStep(${st.n})"><span class="n">${i[st.n].c==='done'?'✓':st.n}</span> <span class="l">${st.l}</span><span class="s">${esc(i[st.n].t)}</span></button></li>`).join('')}</ol>`;
+}
+function goStep(n){ ui.step=Math.max(1,Math.min(6,n)); render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function goDim(k){ ui.dim=k; render(); }
+function stp(n){ return ui.step===n?'on':''; }
+function stepWrap(n,html){ return `<div class="stp ${stp(n)}" data-step="${n}">${html}</div>`; }
+function dimNavHtml(s){
+  const cur=ui.dim||'identity';
+  return `<div class="dimnav" role="tablist">${DIMS.map(d=>`<button role="tab" class="${cur===d.key?'on':''}" onclick="goDim('${d.key}')"><span class="dot c-${dimStatus(s,d.key)}" data-dimdot="${d.key}"></span>${d.short}</button>`).join('')}<button class="${cur==='all'?'on':''}" onclick="goDim('all')">Show all</button></div>`;
+}
+function dimNextHtml(s){
+  const cur=ui.dim||'identity'; if(cur==='all') return ''; const i=DIMS.findIndex(d=>d.key===cur);
+  return i<DIMS.length-1?`<div class="dimnext"><button class="small" onclick="goDim('${DIMS[i+1].key}')">Next check: ${DIMS[i+1].short} →</button></div>`:`<div class="dimnext"><button class="small primary" onclick="goStep(5)">All checks reviewed: see the result →</button></div>`;
+}
+function stepFootHtml(){
+  const n=ui.step; const prev=STEPS[n-2], next=STEPS[n];
+  return `<div class="stfoot noprint"><div>${prev?`<button onclick="goStep(${n-1})">← ${prev.l}</button>`:''}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${n===5?`<button class="primary" onclick="ui.view='report';render();window.scrollTo(0,0)">View report and download PDF</button>`:''}${next?`<button class="${n===5?'':'primary'}" onclick="goStep(${n+1})">${n===5?'Rent Roll':'Next: '+next.l} →</button>`:`<button class="primary" onclick="ui.view='report';render();window.scrollTo(0,0)">View report and download PDF</button>`}</div></div>`;
+}
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function nowISO(){ return new Date().toISOString(); }
 function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -237,33 +296,37 @@ function renderMain(){
 }
 function renderEditor(el){
   const s=cur(); const locked=!!s.criteria.lockedAt;
+  if(!ui.step) ui.step=smartStep(s); if(!ui.dim) ui.dim='identity';
   el.innerHTML = `
-  <div class="actions noprint"><button class="small" onclick="duplicateScreening()">Duplicate details into new screening</button>
-    <button class="small danger" onclick="removeScreening('${s.id}')">${ui.confirmDelete===s.id?'Click again to delete':'Delete'}</button></div>
+  <div class="stepper noprint"><div id="stepper">${stepperHtml(s)}</div></div>
 
-  <div class="panel"><div class="sec-no">1 · Applicant and rental</div><h3>Who and what</h3>
+  <div class="stp ${stp(1)}" data-step="1"><div class="panel"><div class="sec-no">1 · Applicant and rental</div><h3>Who and what</h3>
     <div class="row">${inp('applicant.name','Full name','text',s.applicant.name)}${inp('applicant.email','Email','email',s.applicant.email)}${inp('applicant.phone','Phone','tel',s.applicant.phone)}</div>
     ${inp('applicant.address','Current address','text',s.applicant.address)}
     <div class="row">${inp('rental.property','Rental property / unit','text',s.rental.property)}${inp('rental.rent','Asking monthly rent ($)','number',s.rental.rent,'min="0" step="0.01"')}${inp('rental.moveIn','Intended move-in','date',s.rental.moveIn)}</div>
-    <p class="hint">Do not record anything about protected grounds (age, family status, disability, source of income, etc.).</p></div>
+    <p class="hint">Do not record anything about protected grounds (age, family status, disability, source of income, etc.).</p></div></div>
 
-  <div class="panel"><div class="sec-no">2 · Criteria</div><h3>Set before any check</h3>
+  <div class="stp ${stp(2)}" data-step="2"><div class="panel"><div class="sec-no">2 · Criteria</div><h3>Set before any check</h3>
     <p class="hint">Written down and locked before checks begin, so every applicant is measured against the same standard. After locking they cannot be changed; start a duplicate screening for different criteria.</p>
     ${locked?`<span class="stamp">LOCKED ${esc(fmtDT(s.criteria.lockedAt))}</span>
       <p style="margin:10px 0 0">Minimum credit score: <b>${esc(s.criteria.minCredit)}</b> · References required: <b>${s.criteria.refRequired?'Yes':'No'}</b></p>${s.source?`<p class="hint">Locked in Rent Roll (criteria v${esc(s.source.criteriaVersion)}) before this applicant was invited. They cannot be changed here.</p>`:''}`:
     `<div class="row">${inp('criteria.minCredit','Minimum credit score','number',s.criteria.minCredit,'min="300" max="900"')}
       <div class="field"><label>References required</label><select onchange="setv('criteria.refRequired',this.value==='yes')"><option value="yes" ${s.criteria.refRequired?'selected':''}>Yes</option><option value="no" ${!s.criteria.refRequired?'selected':''}>No</option></select></div></div>
      <button class="primary" onclick="lockCriteria()">Lock criteria</button>`}
-  </div>
+  </div></div>
 
-  ${docsPanelHtml(s)}
-  <div class="panel"><div class="sec-no">4 · Checks</div><h3>Nine dimensions</h3>
+  ${stepWrap(3,docsPanelHtml(s))}
+  <div class="stp ${stp(4)}" data-step="4"><div class="panel"><div class="sec-no">4 · Checks</div><h3>Nine checks, one at a time</h3>
     <p class="hint">${locked?'Record each check. Tick the consent first where one is needed.':'Lock the criteria above to unlock the checks.'}</p>
-    <fieldset ${locked?'':'disabled'}>${DIMS.map(d=>dimCard(s,d)).join('')}</fieldset></div>
+    ${locked?'':`<div class="note">Criteria are not locked yet. <button class="small" onclick="goStep(2)">Go to Criteria</button></div>`}
+    ${dimNavHtml(s)}
+    <fieldset ${locked?'':'disabled'}>${DIMS.filter(d=>ui.dim==='all'||d.key===ui.dim).map(d=>dimCard(s,d)).join('')}</fieldset>${dimNextHtml(s)}</div></div>
 
-  <div class="panel"><div class="sec-no">5 · Result</div><h3>Outcome</h3><div id="outcome"></div></div>
-  ${rrPanelHtml(s)}
-  <div class="actions noprint"><button class="primary" onclick="ui.view='report';render()">View report and download PDF</button></div>`;
+  <div class="stp ${stp(5)}" data-step="5"><div class="panel"><div class="sec-no">5 · Result</div><h3>Outcome</h3><div id="outcome"></div></div></div>
+  ${stepWrap(6,rrPanelHtml(s))}
+  ${stepFootHtml()}
+  <div class="actions noprint" style="justify-content:flex-end;opacity:.85"><button class="small" onclick="duplicateScreening()">Duplicate details into new screening</button>
+    <button class="small danger" onclick="removeScreening('${s.id}')">${ui.confirmDelete===s.id?'Click again to delete':'Delete'}</button></div>`;
   refreshLive();
 }
 function dimCard(s,d){
@@ -295,6 +358,8 @@ function liveR2I(){ const s=cur(); const el=document.getElementById('r2i'); if(!
 function refreshLive(){
   const s=cur(); if(!s) return;
   document.querySelectorAll('[data-chip]').forEach(n=>{ n.innerHTML=chip(dimStatus(s,n.dataset.chip)); });
+  document.querySelectorAll('[data-dimdot]').forEach(n=>{ n.className='dot c-'+dimStatus(s,n.dataset.dimdot); });
+  const sp=document.getElementById('stepper'); if(sp) sp.innerHTML=stepperHtml(s);
   const r=document.getElementById('r2i'); if(r){ const v=r2i(s); r.textContent=v==null?'enter rent and income':v+'%'; }
   const o=document.getElementById('outcome'); if(o) o.innerHTML=outcomeHtml(s);
   renderList();
@@ -1057,6 +1122,20 @@ async function ensureOcr(){
   _ocr=await window.Tesseract.createWorker('eng',1,Object.assign({langPath:OCR_LANG,logger:m=>{ if(m.status&&m.progress!=null) setBusy('Reading text from image... '+Math.round(m.progress*100)+'%'); }},window.__OCR_OPTS||{}));
   return _ocr;
 }
+/* Photos from phones are often huge, rotated by EXIF, or low contrast. Normalize before OCR: apply the EXIF rotation,
+   scale the long side into 1800-2600 px, convert to grayscale and stretch the contrast. Falls back to the raw file. */
+async function prepImage(blob){
+  try{
+    const bmp=await createImageBitmap(blob,{imageOrientation:'from-image'}); const long=Math.max(bmp.width,bmp.height);
+    const k=long>2600?2600/long:(long<1800?Math.min(2,1800/long):1); const w=Math.round(bmp.width*k), hgt=Math.round(bmp.height*k);
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=hgt; const cx=cv.getContext('2d',{willReadFrequently:true}); cx.drawImage(bmp,0,0,w,hgt);
+    const im=cx.getImageData(0,0,w,hgt), d=im.data; let lo=255, hi=0; const hist=new Uint32Array(256);
+    for(let i=0;i<d.length;i+=4){ const g=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)|0; d[i]=g; hist[g]++; }
+    const total=w*hgt; let c=0; for(let v=0;v<256;v++){ c+=hist[v]; if(c>=total*0.01){ lo=v; break; } } c=0; for(let v=255;v>=0;v--){ c+=hist[v]; if(c>=total*0.01){ hi=v; break; } }
+    const span=Math.max(40,hi-lo); for(let i=0;i<d.length;i+=4){ const g=Math.max(0,Math.min(255,((d[i]-lo)*255/span)|0)); d[i]=d[i+1]=d[i+2]=g; }
+    cx.putImageData(im,0,0); const out=await new Promise(r=>cv.toBlob(r,'image/png')); return out||blob;
+  }catch(e){ return blob; }
+}
 async function ocrBlob(blob){ const w=await ensureOcr(); const r=await w.recognize(blob); return {text:r.data.text||'',conf:Math.round(r.data.confidence||0)}; }
 function setBusy(msg){ const e=document.getElementById('docBusy'); if(e) e.textContent=msg; }
 function pdfFlags(bytes,meta,hasText){
@@ -1074,7 +1153,8 @@ async function readOne(s,file){
   let sha=''; try{ const h=await crypto.subtle.digest('SHA-256',bytes); sha=[...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join(''); }catch(e){}
   if((s.docs||[]).some(d=>d.sha256&&d.sha256===sha)){ toast('Already added: '+file.name); return; }
   const isPdf=String.fromCharCode.apply(null,bytes.slice(0,5))==='%PDF-';
-  const isImg=/^image\//.test(file.type)||/\.(png|jpe?g|webp|heic|bmp|gif)$/i.test(file.name);
+  const isImg=/^image\//.test(file.type)||/\.(png|jpe?g|jfif|webp|bmp|gif)$/i.test(file.name);
+  if(/\.heic$/i.test(file.name)){ toast('HEIC photos are not supported. Save or export the photo as JPG or PNG and add it again.'); return; }
   let lines=[], method='text', conf=null, auth=null, csvRows=null;
   if(isPdf){
     const lib=await ensurePdfJs(); const doc=await lib.getDocument({data:bytes.slice()}).promise; const meta={info:{}};
@@ -1089,7 +1169,7 @@ async function readOne(s,file){
     }
     auth=pdfFlags(bytes,meta,hasText);
   } else if(isImg){
-    method='ocr'; setBusy('Reading text from image...'); const o=await ocrBlob(file); lines=o.text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean); conf=o.conf;
+    method='ocr'; setBusy('Preparing the image...'); const prepped=await prepImage(file); setBusy('Reading text from image...'); let o=await ocrBlob(prepped); if(prepped!==file&&o.conf<60){ const o2=await ocrBlob(file); if(o2.conf>o.conf) o=o2; } lines=o.text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean); conf=o.conf;
     auth={tier:'unassessable',flags:[{level:'info',title:'Photo or scan: edits to the image cannot be detected here'}],producer:''};
   } else {
     const txt=new TextDecoder('utf-8').decode(bytes); lines=txt.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
@@ -1212,7 +1292,7 @@ function sectionChecks(s,key){
     if(s.credit.score!==''&&s.credit.score!=null&&s.criteria.minCredit!=='') add(Number(s.credit.score)>=Number(s.criteria.minCredit)?'ok':'bad','Score '+s.credit.score+(Number(s.credit.score)>=Number(s.criteria.minCredit)?' meets':' is below')+' the locked minimum of '+s.criteria.minCredit);
     if(d){ if(d.f.reportDate){ const a=ageDays(d.f.reportDate); add(a<=30?'ok':'warn','Report dated '+d.f.reportDate+(a<=30?' (within 30 days)':' ('+a+' days old)')); } else add('warn','Report date not read');
       add(d.nameHit===true?'ok':d.nameHit===false?'warn':'todo',d.nameHit===true?'Applicant name found in the report':d.nameHit===false?'Applicant name not found in the report text':'Name not compared'); confLine([d]); }
-    const dc=s.docCheck; add(!dc?'todo':dc.tier==='clean'?'ok':dc.tier==='high'?'bad':'warn',!dc?'Authenticity check not run':'Authenticity check: '+TIER_LABEL[dc.tier]);
+    const dc=s.docCheck; add(!dc?'todo':dc.tier==='clean'?'ok':dc.tier==='high'?'bad':'warn',!dc?'Authenticity check not run':'Authenticity check: '+DOCLIST_TIER[dc.tier]);
     add(isSourceVerified(s)?'ok':'todo','Confirmed at the source (live login or direct pull)');
   }
   if(key==='income'){
@@ -1414,12 +1494,56 @@ function docCardHtml(s,d){
     ${marksHtml(marks)}
     ${d.auth&&d.auth.flags.length?`<div class="hint">File check: ${d.auth.flags.map(x=>esc(x.title)).join('; ')}</div>`:''}</div>`;
 }
+
+/* ---------- Checklist of documents to collect ---------- */
+const DOC_LIST=[
+  {type:'id',tier:'req',name:'Government photo ID',eg:'Ontario driver licence, passport, or permanent resident card',feeds:['identity'],from:'Applicant'},
+  {type:'credit',tier:'req',name:'Credit report',eg:'Equifax or TransUnion PDF, no older than 30 days',feeds:['credit'],from:'Applicant (needs their credit consent)'},
+  {type:'paystub',tier:'req',name:'Recent paystubs (2 or more)',eg:'Latest two or three pay periods',feeds:['income','employment'],from:'Applicant',alt:['noa','t4']},
+  {type:'letter',tier:'rec',name:'Employment letter',eg:'Employer, role, start date, pay, on letterhead',feeds:['employment','income'],from:'Applicant or employer'},
+  {type:'bank',tier:'rec',name:'Bank statement (last 1 to 3 months)',eg:'PDF or CSV, shows pay deposits',feeds:['income','employment'],from:'Applicant'},
+  {type:'lease',tier:'ref',name:'Previous lease or landlord letter',eg:'Shows address, rent and dates',feeds:['references'],from:'Applicant'},
+  {type:'noa',tier:'opt',name:'CRA Notice of Assessment',eg:'Latest year; useful for self-employed',feeds:['income'],from:'Applicant (CRA My Account)'},
+  {type:'t4',tier:'opt',name:'T4 slip',eg:'Latest tax year',feeds:['income'],from:'Applicant'},
+  {type:'osb',tier:'opt',name:'OSB insolvency search result',eg:'Result you obtained from the federal records search',feeds:['bankruptcy'],from:'You (needs public-records consent)'},
+  {type:'court',tier:'opt',name:'Court records search result',eg:'Ontario Courts portal or Justice Services Online result',feeds:['court'],from:'You (needs public-records consent)'},
+  {type:'police',tier:'opt',name:'Police record check',eg:'Check the applicant obtained, only if they offer it',feeds:['police'],from:'Applicant (needs their consent)'}
+];
+function docListState(s){
+  const D=s.docs||[];
+  return DOC_LIST.map(r=>{
+    const mine=D.filter(d=>d.type===r.type); const altHave=(r.alt||[]).some(a=>D.some(d=>d.type===a));
+    const low=mine.some(d=>docLow(s,d));
+    const tier=r.tier==='ref'?(s.criteria&&s.criteria.refRequired?'req':'rec'):r.tier;
+    return Object.assign({},r,{tier,count:mine.length,have:mine.length>0,altHave,low});
+  });
+}
+const DOCLIST_TIER={req:'Needed',rec:'Recommended',opt:'Optional'};
+function docChecklistHtml(s){
+  const rows=docListState(s); const need=rows.filter(r=>r.tier==='req'); const haveN=need.filter(r=>r.have||r.altHave).length;
+  const order={req:0,rec:1,opt:2}; rows.sort((a,b)=>order[a.tier]-order[b.tier]);
+  const body=rows.map(r=>{
+    const st=r.have?(r.low?'low':'ok'):(r.altHave?'alt':'miss');
+    const mark={ok:'✓',low:'!',alt:'✓',miss:''}[st]; const col={ok:'var(--green)',low:'var(--amber)',alt:'var(--green)',miss:'transparent'}[st];
+    const stTxt=r.have?(r.count+' added'+(r.low?' · low confidence':'')):(r.altHave?'Covered by another document':(r.tier==='req'?'Not added yet':'Not added'));
+    return `<tr><td style="width:28px"><span style="display:inline-flex;width:20px;height:20px;border-radius:50%;border:2px solid ${st==='miss'?'var(--line)':col};background:${st==='miss'?'#fff':col};color:#fff;font-size:12px;font-weight:700;align-items:center;justify-content:center">${mark}</span></td>
+      <td><b>${esc(r.name)}</b> <span class="badge" style="margin:0">${DOCLIST_TIER[r.tier]}</span><div class="hint" style="margin:1px 0 0">${esc(r.eg)} · From: ${esc(r.from)}</div></td>
+      <td style="white-space:nowrap;font-size:13px">${esc(stTxt)}</td>
+      <td style="font-size:12px;color:var(--muted)">${r.feeds.map(k=>esc(DIM_NAME[k])).join(', ')}</td></tr>`;
+  }).join('');
+  return `<details class="doclist" open style="margin:10px 0 14px;border:1px solid var(--line);border-radius:4px;background:#fff">
+    <summary style="cursor:pointer;padding:10px 12px;font-weight:600">Documents to collect <span class="badge">${haveN} of ${need.length} needed added</span></summary>
+    <div style="padding:0 12px 10px"><p class="hint" style="margin-top:0">Collect these from the applicant before the checks in step 4. Each one feeds the checks listed on the right. Anything missing can still be entered by hand in the check itself.</p>
+    <div class="tablewrap"><table><thead><tr><th></th><th>Document</th><th>Status</th><th>Feeds check</th></tr></thead><tbody>${body}</tbody></table></div></div></details>`;
+}
+
 function docsPanelHtml(s){
   const D=s.docs||[]; const checks=docChecks(s).filter(c=>!c.ids.length||true); const est=incomeEstimate(s); const conf=s.docConfirm||{};
   const needs=Object.keys(DIM_DOCS).filter(k=>dimBlocked(s,k));
   return `<div class="panel"><div class="sec-no">3 · Documents</div><h3>Read documents automatically</h3>
     ${privacyBannerHtml()}
     <p class="hint">Add what the applicant gave you: ID, paystubs, employment letter, tax slips, credit report, bank statement, previous lease. The app recognizes each one, reads it on this computer, gives every value a confidence percentage, cross-checks the documents and proposes values for the checks below. Nothing is uploaded. Only the extracted fields are kept, not the files.</p>
+    ${docChecklistHtml(s)}
     <label class="dropzone" ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="display:block;border:2px dashed var(--line);border-radius:4px;padding:18px;text-align:center;cursor:pointer;background:#fff">
       <b>Drop files here or click to choose</b><div class="hint" style="margin:4px 0 0">PDF, photo (JPG/PNG) or CSV. Photos and scans are read with OCR, which can take a few seconds.</div>
       <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.csv,.tsv,.txt,application/pdf,image/*,text/csv" style="display:none" onchange="readDocFiles(this.files);this.value=''"></label>
