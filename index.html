@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v2 · Tenant Screening</title>
+<title>v4 · Tenant Screening</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -78,7 +78,7 @@ a{color:var(--ink)}
 .stbtn.part{border-bottom-color:var(--amber)}
 .stp{display:none}.stp.on{display:block}
 .stfoot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:6px 0 24px}
-.dimnav{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px}
+.dimnav{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px}.dimgrp{margin:10px 0 12px}
 .dimnav button{padding:5px 10px;font-size:13px;border-radius:14px;background:var(--raised);border-color:var(--line);display:inline-flex;align-items:center;gap:6px}
 .dimnav button.on{background:var(--ink);color:#F8F5EF;border-color:var(--ink)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#8a8576;border:1px solid rgba(255,255,255,.6)}
@@ -152,7 +152,7 @@ function stepInfo(s){
     1:{c:a?'done':'',t:a?'Complete':'Name and rental needed'},
     2:{c:s.criteria.lockedAt?'done':'',t:s.criteria.lockedAt?'Locked':'Not locked'},
     3:{c:docs?'done':'',t:docs?docs+' read':'Optional'},
-    4:{c:done===DIMS.length?(anyConcern?'warn':'done'):(done?'part':''),t:done+' of '+DIMS.length+' recorded'+(anyConcern?' · concern':'')},
+    4:{c:DIMS.filter(d=>isMust(s,d)).every(d=>dimStatus(s,d.key)!=='unchecked')?(anyConcern?'warn':'done'):(done?'part':''),t:(()=>{ const mu=DIMS.filter(d=>isMust(s,d)); const md=mu.filter(d=>dimStatus(s,d.key)!=='unchecked').length; return 'Must haves '+md+'/'+mu.length+(anyConcern?' · concern':''); })()},
     5:{c:e.final==='incomplete'?'':(e.final==='met'?'done':(e.final==='not_met'?'warn':'part')),t:OUTCOME_LABEL[e.final]||''},
     6:{c:s.source&&s.source.sentAt?'done':'',t:s.source?'Linked':'Optional'}
   };
@@ -166,13 +166,23 @@ function goStep(n){ ui.step=Math.max(1,Math.min(6,n)); render(); window.scrollTo
 function goDim(k){ ui.dim=k; render(); }
 function stp(n){ return ui.step===n?'on':''; }
 function stepWrap(n,html){ return `<div class="stp ${stp(n)}" data-step="${n}">${html}</div>`; }
+function isMust(s,d){ return !!d.req || (d.refDim && !!(s.criteria&&s.criteria.refRequired)); }
+function dimOrder(s){ return DIMS.filter(d=>isMust(s,d)).concat(DIMS.filter(d=>!isMust(s,d))); }
 function dimNavHtml(s){
-  const cur=ui.dim||'identity';
-  return `<div class="dimnav" role="tablist">${DIMS.map(d=>`<button role="tab" class="${cur===d.key?'on':''}" onclick="goDim('${d.key}')"><span class="dot c-${dimStatus(s,d.key)}" data-dimdot="${d.key}"></span>${d.short}</button>`).join('')}<button class="${cur==='all'?'on':''}" onclick="goDim('all')">Show all</button></div>`;
+  const cur=ui.dim||'identity'; const btn=d=>`<button role="tab" class="${cur===d.key?'on':''}" onclick="goDim('${d.key}')"><span class="dot c-${dimStatus(s,d.key)}" data-dimdot="${d.key}"></span>${d.short}</button>`;
+  const must=DIMS.filter(d=>isMust(s,d)), nice=DIMS.filter(d=>!isMust(s,d));
+  const mDone=must.filter(d=>dimStatus(s,d.key)!=='unchecked').length;
+  return `<div class="dimgrp"><div class="sec-no">Must haves <span class="badge" style="margin-left:4px">${mDone} of ${must.length} recorded</span></div><div class="dimnav" role="tablist">${must.map(btn).join('')}</div>
+    <div class="sec-no" style="margin-top:6px">Nice to haves <span class="badge" style="margin-left:4px">optional</span></div><div class="dimnav" role="tablist">${nice.map(btn).join('')}<button class="${cur==='all'?'on':''}" onclick="goDim('all')">Show all</button></div></div>`;
+}
+function dimCardsHtml(s){
+  if(ui.dim!=='all') return DIMS.filter(d=>d.key===ui.dim).map(d=>dimCard(s,d)).join('');
+  const must=DIMS.filter(d=>isMust(s,d)), nice=DIMS.filter(d=>!isMust(s,d));
+  return `<h4 style="margin:6px 0 8px;font-family:'Source Serif 4',serif">Must haves</h4>${must.map(d=>dimCard(s,d)).join('')}<h4 style="margin:14px 0 8px;font-family:'Source Serif 4',serif">Nice to haves</h4>${nice.map(d=>dimCard(s,d)).join('')}`;
 }
 function dimNextHtml(s){
-  const cur=ui.dim||'identity'; if(cur==='all') return ''; const i=DIMS.findIndex(d=>d.key===cur);
-  return i<DIMS.length-1?`<div class="dimnext"><button class="small" onclick="goDim('${DIMS[i+1].key}')">Next check: ${DIMS[i+1].short} →</button></div>`:`<div class="dimnext"><button class="small primary" onclick="goStep(5)">All checks reviewed: see the result →</button></div>`;
+  const cur=ui.dim||'identity'; if(cur==='all') return ''; const O=dimOrder(s); const i=O.findIndex(d=>d.key===cur);
+  return i<O.length-1?`<div class="dimnext"><button class="small" onclick="goDim('${O[i+1].key}')">Next check: ${O[i+1].short} →</button></div>`:`<div class="dimnext"><button class="small primary" onclick="goStep(5)">All checks reviewed: see the result →</button></div>`;
 }
 function stepFootHtml(){
   const n=ui.step; const prev=STEPS[n-2], next=STEPS[n];
@@ -316,11 +326,11 @@ function renderEditor(el){
   </div></div>
 
   ${stepWrap(3,docsPanelHtml(s))}
-  <div class="stp ${stp(4)}" data-step="4"><div class="panel"><div class="sec-no">4 · Checks</div><h3>Nine checks, one at a time</h3>
+  <div class="stp ${stp(4)}" data-step="4"><div class="panel"><div class="sec-no">4 · Checks</div><h3>Checks, one at a time</h3>
     <p class="hint">${locked?'Record each check. Tick the consent first where one is needed.':'Lock the criteria above to unlock the checks.'}</p>
     ${locked?'':`<div class="note">Criteria are not locked yet. <button class="small" onclick="goStep(2)">Go to Criteria</button></div>`}
     ${dimNavHtml(s)}
-    <fieldset ${locked?'':'disabled'}>${DIMS.filter(d=>ui.dim==='all'||d.key===ui.dim).map(d=>dimCard(s,d)).join('')}</fieldset>${dimNextHtml(s)}</div></div>
+    <fieldset ${locked?'':'disabled'}>${dimCardsHtml(s)}</fieldset>${dimNextHtml(s)}</div></div>
 
   <div class="stp ${stp(5)}" data-step="5"><div class="panel"><div class="sec-no">5 · Result</div><h3>Outcome</h3><div id="outcome"></div></div></div>
   ${stepWrap(6,rrPanelHtml(s))}
@@ -352,7 +362,52 @@ function dimCard(s,d){
     <p class="hint" style="margin:4px 0">${d.desc}${d.link?` <a href="${d.link[1]}" target="_blank" rel="noopener">${d.link[0]} ↗</a>`:''}</p>
     ${d.consent?`<label class="consent"><input type="checkbox" ${ok?'checked':''} onchange="toggleConsent('${d.consent}',this.checked)"> Applicant consent: ${CONSENTS[d.consent]}${ok&&s.consents[d.consent]?` <span class="badge">${esc(fmtDT(s.consents[d.consent].at))}</span>`:''}</label>`:''}
     ${ok?'':'<div class="note">Awaiting consent. This check cannot be recorded without it.</div>'}
-    ${ok?sectionChecksHtml(s,d.key)+manualBannerHtml(s,d.key):''}${d.key==='ltb'&&ok?ltbPanelHtml(s):''}${d.key==='employment'&&ok?prelimPanelHtml(s):''}${(d.key==='references'||d.key==='employment')&&ok?mailPanelHtml(s,d.key==='references'?'landlord':'employer'):''}${body}${common}${srcRow}</div>`;
+    ${ok?sectionChecksHtml(s,d.key)+manualBannerHtml(s,d.key):''}${d.key==='ltb'&&ok?ltbPanelHtml(s):''}${['bankruptcy','court','police'].includes(d.key)&&ok?searchPackHtml(s,d.key):''}${d.key==='employment'&&ok?prelimPanelHtml(s):''}${(d.key==='references'||d.key==='employment')&&ok?mailPanelHtml(s,d.key==='references'?'landlord':'employer'):''}${body}${common}${srcRow}</div>`;
+}
+const PACK={
+  bankruptcy:{title:'Insolvency search pack',intro:'The federal OSB records search is run on the government site (a fee of about $8 applies). This pack gives you the details to enter and keeps a record that you searched.',
+    steps:['Open the OSB search below and choose a search by individual name.','Enter the name exactly as shown, then try each previous name too. Pay the fee and download the result as PDF, or take a clear screenshot.','Add the result file here. The app reads it and sets the check. You confirm.'],
+    use:'Search for the applicant by name only. A similar name is not a match: compare the date of birth and city on any record before you rely on it.'},
+  court:{title:'Court records search pack',intro:'Ontario civil court records are searched on the official portal (Toronto region) or Justice Services Online (elsewhere in Ontario). The app cannot run these searches for you.',
+    steps:['Open the court portal below and search civil cases by party name, using the name in the pack.','Look for judgments about rent, damage or debt. Take a screenshot or save the results page as PDF, including a search with no results.','Add the result file here. The app reads it and sets the check. You confirm.'],
+    use:'Common names produce unrelated cases. Match the city and the type of case before you treat a result as the applicant.'},
+  police:{title:'Police record check request',intro:'There is no landlord search for police records. Only the applicant can order a check from their own police service, and only with their signed consent. You ask them to share the result.',
+    steps:['Send the applicant the request below. It asks for a standard police record check, not a vulnerable-sector check, and makes sharing optional.','The applicant orders it from their local police service and sends you the result.','Add the result here. The app reads it and sets the check. You confirm.'],
+    use:'Sharing is the applicant\'s choice. Ask every applicant the same way, and use the result only against the criteria you wrote down before screening.'}
+};
+function packNames(s){
+  const n=(s.applicant.name||'').trim().replace(/\s+/g,' '); if(!n) return [];
+  const parts=n.split(' '); const out=[n];
+  if(parts.length>1){ out.push(parts[parts.length-1]+', '+parts.slice(0,-1).join(' ')); if(parts.length>2) out.push(parts[0]+' '+parts[parts.length-1]); }
+  (String((s.pack&&s.pack.prev)||'').split(/[;\n]+/).map(x=>x.trim()).filter(Boolean)).forEach(x=>out.push(x));
+  return [...new Set(out)];
+}
+function packText(s,key){
+  const p=PACK[key]; const names=packNames(s); const cons=s.consents&&s.consents[DIMS.find(d=>d.key===key).consent];
+  if(key==='police') return 'Subject: Optional police record check for your rental application\n\nHi '+((s.applicant.name||'').split(' ')[0]||'')+',\n\nFor '+(s.rental.property||'the rental')+', we ask every applicant to consider sharing a standard police record check (not a vulnerable-sector check). Sharing is optional and is only used together with the other criteria we gave you. If you choose to, please order it from your local police service and send me the result. It should be no more than 30 days old.\n\nThank you.';
+  return p.title+' for '+(s.applicant.name||'applicant')+'\nNames to search: '+names.join(' | ')+'\nDate of birth (to compare on any record): '+((s.pack&&s.pack.dob)||'not recorded')+'\nCurrent address: '+(s.applicant.address||'not recorded')+'\nConsent recorded: '+(cons&&cons.at?fmtDT(cons.at):'not recorded')+'\nSearch type: '+(key==='bankruptcy'?'OSB individual search':'Civil court cases by party name');
+}
+function copyPack(key){ const s=cur(); if(!s) return; const t=packText(s,key); const done=()=>toast(key==='police'?'Request copied':'Search details copied');
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,()=>fallbackCopy(t,done)); } else fallbackCopy(t,done); }
+function openSearch(key,url){ const s=cur(); if(!s) return; setPath(s,'pack.opened.'+key,nowISO()); s.updatedAt=nowISO(); save(); window.open(url,'_blank','noopener'); render(); }
+function packAddFiles(files){ if(!files||!files.length) return; const p=readDocFiles(files); Promise.resolve(p).then(()=>toast('Added. It now shows under Documents (step 3). Press Apply to the checks there.')); }
+function searchPackHtml(s,key){
+  const p=PACK[key]; if(!p) return ''; const dm=DIMS.find(d=>d.key===key); const names=packNames(s); const opened=s.pack&&s.pack.opened&&s.pack.opened[key];
+  const has=(s.docs||[]).some(d=>(DIM_DOCS[key]||[]).includes(d.type));
+  const done=n=>`<span class="badge" style="margin:0 6px 0 0;color:${n?'var(--green)':'var(--muted)'}">${n?'✓':'○'}</span>`;
+  return `<div class="doccheck" style="border-style:solid"><b>${p.title}</b>
+    <p class="hint" style="margin:4px 0 8px">${p.intro}</p>
+    ${key==='police'?`<pre style="white-space:pre-wrap;font:12px/1.5 'IBM Plex Mono',monospace;background:#fff;border:1px solid var(--line);padding:10px;max-height:200px;overflow:auto;margin:0 0 8px">${esc(packText(s,key))}</pre>`:
+    `<div style="background:#fff;border:1px solid var(--line);border-radius:3px;padding:8px 10px;margin-bottom:8px;font-size:13px">
+      <div><span class="sec-no">Search these names</span></div>${names.length?names.map(n=>`<div style="font-family:'IBM Plex Mono',monospace">${esc(n)}</div>`).join(''):'<div class="hint">Add the applicant name in step 1.</div>'}
+      <div class="row" style="margin-top:8px">${inp('pack.prev','Previous names or spellings (separate with ;)','text',(s.pack&&s.pack.prev)||'')}${inp('pack.dob','Date of birth (to compare on records)','date',(s.pack&&s.pack.dob)||'')}</div></div>`}
+    <ol style="margin:0 0 8px;padding-left:18px;font-size:13px">${p.steps.map(x=>`<li>${x}</li>`).join('')}</ol>
+    <div class="actions noprint" style="margin:6px 0">
+      <button onclick="copyPack('${key}')">${key==='police'?'Copy request to applicant':'Copy search details'}</button>
+      ${dm.link?`<button class="primary" onclick="openSearch('${key}','${dm.link[1]}')">Open ${esc(dm.link[0])} ↗</button>`:''}
+      <label class="small" style="display:inline-block;border:1px solid var(--ink);border-radius:3px;padding:4px 9px;cursor:pointer">Add the result file<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/*" style="display:none" onchange="packAddFiles(this.files);this.value=''"></label></div>
+    <div style="font-size:13px">${done(true)}Consent recorded ${s.consents&&s.consents[dm.consent]&&s.consents[dm.consent].at?esc(fmtDT(s.consents[dm.consent].at)):''}<br>${key==='police'?'':done(opened)+(opened?'Official search opened '+esc(fmtDT(opened)):'Official search not opened yet')+'<br>'}${done(has)}${has?'Result added':'Result not added yet'}</div>
+    <p class="hint" style="margin:8px 0 0"><b>Reminder:</b> ${p.use}</p></div>`;
 }
 function liveR2I(){ const s=cur(); const el=document.getElementById('r2i'); if(!el) return; const inp=document.querySelector('input[onchange*="income.monthly"]'); const i=Number(inp.value), r=Number(s.rental.rent); el.textContent=(r>0&&i>0)?Math.round(r/i*100)+'%':'enter rent and income'; }
 function refreshLive(){
@@ -1443,6 +1498,13 @@ async function applyDocs(){
   }
   const est=incomeEstimate(s);
   if(est){ if(!cons('credit')) log.push('Income: skipped, income is collected alongside the credit check (consent needed)'); else if(!blocked('income','Income')){ s.income.monthly=String(est.monthly); s.income.basis=est.basis+(dimEdited(s,'income').length?', with owner edits':''); log.push('Income: '+fmtMoney(est.monthly)+'/month ('+est.basis+'). Your yes/no on affordability is still yours to answer.'); } }
+  const autoNote=c=>!c||!c.note||/^Auto-read/.test(c.note);
+  if(est&&cons('credit')&&!dimBlocked(s,'income')){
+    const used=[['paystub','Recent paystubs'],['letter','Employment letter'],['noa','CRA Notice of Assessment'],['t4','T4 slip'],['bank','Bank statements']].filter(([ty])=>by(ty).length);
+    const dates=[].concat(by('paystub').map(d=>d.f.payDate),by('bank').map(d=>d.f.periodEnd)).filter(Boolean).sort();
+    const prev=s.checks.income||{}; const r=s.rental.rent?Math.round(Number(s.rental.rent)/est.monthly*100):null;
+    if(autoNote(prev)) s.checks.income=Object.assign({},prev,{source:used.map(x=>x[1]).join(' + '),date:dates.length?dates[dates.length-1]:today,note:'Auto-read from '+used.map(x=>x[1].toLowerCase()).join(', ')+': '+fmtMoney(est.monthly)+'/month ('+est.basis+')'+(r?'; rent is '+r+'% of income (information only)':'')+'. Affordability yes/no is the owner\'s call.'});
+  }
   const lt=by('letter')[0], ps=by('paystub')[0];
   if(lt||ps){
     if(!cons('employment')) log.push('Employment: skipped, record the employer-contact consent first');
@@ -1462,6 +1524,8 @@ async function applyDocs(){
     log.push(lab+': '+(status==='clear'?'clear':status==='concern'?'concern, a record is reported: review it':'noted, not cleared (name or date needs your check)'));
   });
   const ls=by('lease')[0];
+  if(ls){ const prev=s.checks.references||{}; if(autoNote(prev)) s.checks.references=Object.assign({status:'unchecked'},prev,{source:'Previous lease supplied by applicant',date:ls.f.end||today,note:'Auto-read from the previous lease ('+docScore(s,ls)+'% confidence): landlord '+(ls.f.landlord||'not read')+', '+(ls.f.address||'address not read')+(ls.f.rent?', rent '+fmtMoney(ls.f.rent):'')+(ls.f.start?', from '+ls.f.start:'')+(ls.f.end?' to '+ls.f.end:'')+'. A lease shows tenancy, not conduct: contact the landlord to confirm.'}); }
+  if(idd&&idd.f.name){ if(!s.applicant.name){ s.applicant.name=idd.f.name; log.push('Applicant name filled in from the ID'); } else { const a=String(s.applicant.name).trim().toLowerCase(), b=String(idd.f.name).trim().toLowerCase(); if(a!==b&&nameMatch(s.applicant.name,idd.f.name)!=='mismatch'){ s.pack=s.pack||{}; const have=String(s.pack.prev||''); if(!have.toLowerCase().includes(b)){ s.pack.prev=(have?have+'; ':'')+idd.f.name; log.push('Name on the ID added as a name to search: '+idd.f.name); } } } }
   if(ls){ s.mail=s.mail||{}; const l0=s.mail.landlord||(s.mail.landlord={}); if(!l0.org&&ls.f.landlord) l0.org=ls.f.landlord; if(!l0.address&&ls.f.address) l0.address=ls.f.address; if(!l0.from&&ls.f.start) l0.from=ls.f.start; if(!l0.to&&ls.f.end) l0.to=ls.f.end; log.push('Rental history: landlord email panel prefilled from the lease. A lease is not a reference, so contact the landlord.'); }
   if(!log.length) log.push('Nothing to apply yet. Add documents first.');
   DOC_ST.applied=log; s.updatedAt=nowISO(); save(); render(); toast('Applied to the checks');
@@ -1501,7 +1565,7 @@ const DOC_LIST=[
   {type:'credit',tier:'req',name:'Credit report',eg:'Equifax or TransUnion PDF, no older than 30 days',feeds:['credit'],from:'Applicant (needs their credit consent)'},
   {type:'paystub',tier:'req',name:'Recent paystubs (2 or more)',eg:'Latest two or three pay periods',feeds:['income','employment'],from:'Applicant',alt:['noa','t4']},
   {type:'letter',tier:'rec',name:'Employment letter',eg:'Employer, role, start date, pay, on letterhead',feeds:['employment','income'],from:'Applicant or employer'},
-  {type:'bank',tier:'rec',name:'Bank statement (last 1 to 3 months)',eg:'PDF or CSV, shows pay deposits',feeds:['income','employment'],from:'Applicant'},
+  {type:'bank',tier:'req',name:'Bank statement (last 1 to 3 months)',eg:'PDF or CSV, shows pay deposits',feeds:['income','employment'],from:'Applicant'},
   {type:'lease',tier:'ref',name:'Previous lease or landlord letter',eg:'Shows address, rent and dates',feeds:['references'],from:'Applicant'},
   {type:'noa',tier:'opt',name:'CRA Notice of Assessment',eg:'Latest year; useful for self-employed',feeds:['income'],from:'Applicant (CRA My Account)'},
   {type:'t4',tier:'opt',name:'T4 slip',eg:'Latest tax year',feeds:['income'],from:'Applicant'},
@@ -1520,29 +1584,25 @@ function docListState(s){
 }
 const DOCLIST_TIER={req:'Needed',rec:'Recommended',opt:'Optional'};
 function docChecklistHtml(s){
-  const rows=docListState(s); const need=rows.filter(r=>r.tier==='req'); const haveN=need.filter(r=>r.have||r.altHave).length;
-  const order={req:0,rec:1,opt:2}; rows.sort((a,b)=>order[a.tier]-order[b.tier]);
-  const body=rows.map(r=>{
-    const st=r.have?(r.low?'low':'ok'):(r.altHave?'alt':'miss');
-    const mark={ok:'✓',low:'!',alt:'✓',miss:''}[st]; const col={ok:'var(--green)',low:'var(--amber)',alt:'var(--green)',miss:'transparent'}[st];
-    const stTxt=r.have?(r.count+' added'+(r.low?' · low confidence':'')):(r.altHave?'Covered by another document':(r.tier==='req'?'Not added yet':'Not added'));
-    return `<tr><td style="width:28px"><span style="display:inline-flex;width:20px;height:20px;border-radius:50%;border:2px solid ${st==='miss'?'var(--line)':col};background:${st==='miss'?'#fff':col};color:#fff;font-size:12px;font-weight:700;align-items:center;justify-content:center">${mark}</span></td>
-      <td><b>${esc(r.name)}</b> <span class="badge" style="margin:0">${DOCLIST_TIER[r.tier]}</span><div class="hint" style="margin:1px 0 0">${esc(r.eg)} · From: ${esc(r.from)}</div></td>
-      <td style="white-space:nowrap;font-size:13px">${esc(stTxt)}</td>
-      <td style="font-size:12px;color:var(--muted)">${r.feeds.map(k=>esc(DIM_NAME[k])).join(', ')}</td></tr>`;
-  }).join('');
-  return `<details class="doclist" open style="margin:10px 0 14px;border:1px solid var(--line);border-radius:4px;background:#fff">
-    <summary style="cursor:pointer;padding:10px 12px;font-weight:600">Documents to collect <span class="badge">${haveN} of ${need.length} needed added</span></summary>
-    <div style="padding:0 12px 10px"><p class="hint" style="margin-top:0">Collect these from the applicant before the checks in step 4. Each one feeds the checks listed on the right. Anything missing can still be entered by hand in the check itself.</p>
-    <div class="tablewrap"><table><thead><tr><th></th><th>Document</th><th>Status</th><th>Feeds check</th></tr></thead><tbody>${body}</tbody></table></div></div></details>`;
+  const rows=docListState(s); const need=rows.filter(r=>r.tier==='req'); const more=rows.filter(r=>r.tier!=='req');
+  const haveN=need.filter(r=>r.have||r.altHave).length;
+  const short={id:'Photo ID',credit:'Credit report',paystub:'Paystubs',letter:'Employment letter',bank:'Bank statement',lease:'Previous lease or landlord letter',noa:'Notice of Assessment',t4:'T4 slip',osb:'Insolvency search result',court:'Court search result',police:'Police record check'};
+  const detail=r=>{ const D=(s.docs||[]).filter(d=>d.type===r.type); if(!D.length) return r.altHave?'covered':'added'; const f=D[0].f||{}; const n=D.length>1?D.length+' files · ':'';
+    const m={id:()=>f.expiry?'expires '+f.expiry:'', paystub:()=>{ const ds=D.map(d=>d.f.payDate).filter(Boolean).sort(); return ds.length?'latest '+ds[ds.length-1]:''; }, credit:()=>(f.score!=null?'score '+f.score:'')+(f.reportDate?' · '+f.reportDate:''), bank:()=>f.periodStart?f.periodStart+' to '+f.periodEnd:'', letter:()=>f.employer||'', lease:()=>f.end?'ends '+f.end:'', noa:()=>f.year?'tax year '+f.year:'', t4:()=>f.year?'tax year '+f.year:'', osb:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:''), court:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:''), police:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:'')};
+    const x=(m[r.type]||(()=>''))(); return n+(x||'added'); };
+  const row=r=>{ const ok=r.have||r.altHave; const dot=`<span style="display:inline-flex;flex:none;width:18px;height:18px;border-radius:50%;border:2px solid ${ok?(r.low?'var(--amber)':'var(--green)'):'var(--line)'};background:${ok?(r.low?'var(--amber)':'var(--green)'):'#fff'};color:#fff;font-size:11px;font-weight:700;align-items:center;justify-content:center">${ok?(r.low?'!':'✓'):''}</span>`;
+    return `<li style="display:flex;gap:8px;align-items:center;padding:4px 0">${dot}<span style="${ok?'':'font-weight:600'}">${esc(short[r.type]||r.name)}</span><span class="hint" style="margin:0 0 0 auto;white-space:nowrap">${ok?(r.low?'check it · ':'')+esc(detail(r)):esc(r.feeds.map(k=>DIM_NAME[k]).join(', '))}</span></li>`; };
+  return `<div class="doclist" style="margin:10px 0 14px;border:1px solid var(--line);border-radius:4px;background:#fff;padding:10px 12px">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Must haves</b><span class="badge" style="margin:0">${haveN} of ${need.length} added</span></div>
+    <ul style="list-style:none;margin:6px 0 0;padding:0">${need.map(row).join('')}</ul>
+    <details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px;color:var(--muted)">Also helpful (${more.length})</summary><ul style="list-style:none;margin:4px 0 0;padding:0">${more.map(row).join('')}</ul></details></div>`;
 }
-
 function docsPanelHtml(s){
   const D=s.docs||[]; const checks=docChecks(s).filter(c=>!c.ids.length||true); const est=incomeEstimate(s); const conf=s.docConfirm||{};
   const needs=Object.keys(DIM_DOCS).filter(k=>dimBlocked(s,k));
   return `<div class="panel"><div class="sec-no">3 · Documents</div><h3>Read documents automatically</h3>
     ${privacyBannerHtml()}
-    <p class="hint">Add what the applicant gave you: ID, paystubs, employment letter, tax slips, credit report, bank statement, previous lease. The app recognizes each one, reads it on this computer, gives every value a confidence percentage, cross-checks the documents and proposes values for the checks below. Nothing is uploaded. Only the extracted fields are kept, not the files.</p>
+    <p class="hint">Drop in whatever the applicant gave you. The app reads each file on this device and fills in the checks for you to confirm.</p>
     ${docChecklistHtml(s)}
     <label class="dropzone" ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="display:block;border:2px dashed var(--line);border-radius:4px;padding:18px;text-align:center;cursor:pointer;background:#fff">
       <b>Drop files here or click to choose</b><div class="hint" style="margin:4px 0 0">PDF, photo (JPG/PNG) or CSV. Photos and scans are read with OCR, which can take a few seconds.</div>
