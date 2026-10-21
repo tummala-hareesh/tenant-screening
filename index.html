@@ -3,15 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v4 · Tenant Screening</title>
+<title>LEASE — Landlord Essentials: Applicants, Screening &amp; Evictions</title>
+<meta name="description" content="Screen. Lease. Done. Built by an Ontario small landlord, for Ontario small landlords — completely free, always.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Source+Serif+4:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
-:root{--ink:#1C2B39;--paper:#EFEBE3;--raised:#F8F5EF;--red:#9A3324;--green:#3F6B54;--amber:#B8863F;--line:#C9C2B3;--muted:#6b6659;}
+:root{--ink:#1C2B39;--paper:#EFEBE3;--raised:#F8F5EF;--red:#9A3324;--green:#3F6B54;--amber:#B8863F;--line:#C9C2B3;--muted:#6b6659;--gold:#D9B77A;--gold-dark:#B8953A;}
 *{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px;line-height:1.45}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Instrument Sans',system-ui,sans-serif;font-size:15px;line-height:1.45}
 h1,h2,h3,h4,.brand{font-family:'Source Serif 4',Georgia,serif;margin:0}
 .top{background:var(--ink);color:#F8F5EF;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .brand{font-size:22px;font-weight:600}.brand em{font-style:normal;color:#D9B77A}
@@ -24,11 +25,14 @@ h1,h2,h3,h4,.brand{font-family:'Source Serif 4',Georgia,serif;margin:0}
 .hint{color:var(--muted);font-size:13px;margin:4px 0 10px}
 .field{margin-bottom:10px;flex:1;min-width:140px}
 .field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
-input,select,textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:3px;background:#fff;color:var(--ink)}
+input,select,textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:3px;background:#fff;color:var(--ink);transition:border-color 150ms ease-out,box-shadow 150ms ease-out}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 2px rgba(217,183,122,.2)}
 input:disabled,select:disabled,textarea:disabled{background:#ece8de;color:#8a8576}
 .row{display:flex;gap:12px;flex-wrap:wrap}
-button{font:inherit;cursor:pointer;border-radius:3px;padding:8px 14px;border:1px solid var(--ink);background:transparent;color:var(--ink)}
+button{font:inherit;cursor:pointer;border-radius:3px;padding:8px 14px;border:1px solid var(--ink);background:transparent;color:var(--ink);transition:background 150ms ease-out,color 150ms ease-out,border-color 150ms ease-out}
+button:hover:not(:disabled){background:var(--gold);color:var(--ink);border-color:var(--gold)}
 .primary{background:var(--ink);color:#F8F5EF}
+.primary:hover:not(:disabled){background:var(--gold);color:var(--ink);border-color:var(--gold)}
 .top a{text-decoration:underline;text-underline-offset:2px}
 .top .primary{background:#D9B77A;color:var(--ink);border-color:#D9B77A;font-weight:600}
 .danger{border-color:var(--red);color:var(--red)}
@@ -72,7 +76,7 @@ a{color:var(--ink)}
 .stbtn .n{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
 .stbtn .l{display:block;font-weight:600;font-size:14px}
 .stbtn .s{display:block;font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stbtn.on{border-color:var(--ink);border-bottom-color:var(--ink);background:#fff}
+.stbtn.on{border-color:var(--ink);border-bottom-color:var(--gold);background:#fff}
 .stbtn.done{border-bottom-color:var(--green)}.stbtn.done .n{color:var(--green)}
 .stbtn.warn{border-bottom-color:var(--red)}.stbtn.warn .n{color:var(--red)}
 .stbtn.part{border-bottom-color:var(--amber)}
@@ -96,9 +100,13 @@ a{color:var(--ink)}
 </style>
 </head>
 <body>
-<div class="top"><div class="brand">Tenant <em>Screening</em></div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="ui.view='notices';ui.noticeForm=null;ui.noticeQ1='';ui.noticeQ2='';render()" style="background:transparent;border-color:#D9B77A;color:#D9B77A">LTB Notices</button></div></div>
+<div class="top"><div class="brand">LEASE <em style="font-size:11px;font-weight:400;color:var(--muted);display:block;line-height:1.4">Landlord Essentials: Applicants, Screening &amp; Evictions<br><span style="font-size:10px">Screen. Lease. Done.</span></em></div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="ui.view='notices';ui.noticeForm=null;ui.noticeQ1='';ui.noticeQ2='';render()" style="background:transparent;border-color:var(--gold);color:var(--gold)">LTB Notices</button></div></div>
 <div class="layout"><aside id="list"></aside><main id="main"></main></div>
 <div class="toast" id="toast"></div>
+<footer class="noprint" style="background:var(--ink);color:#6B8599;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.04em;padding:14px 20px;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center">
+  <span>LEASE — Landlord Essentials: Applicants, Screening &amp; Evictions</span>
+  <span style="color:#4A6A7A">Your data never leaves your browser &nbsp;·&nbsp; No account &nbsp;·&nbsp; No server &nbsp;·&nbsp; PIPEDA-compliant by design &nbsp;·&nbsp; Completely free, always</span>
+</footer>
 
 <script>
 /* ======================= CONFIG ======================= */
@@ -443,7 +451,35 @@ function inp(path,label,type,val,extra){ return `<div class="field"><label>${lab
 function renderMain(){
   const el=document.getElementById('main');
   if(ui.view==='home'||!cur()){
-    el.innerHTML = `<div class="panel">${privacyBannerHtml()}<h3>Screen a tenant, get a PDF report</h3>
+    const showWelcome=!localStorage.getItem('lease:welcomeDismissed');
+    const welcomeHtml=showWelcome?`<div class="panel" id="welcome-panel" style="border-left:4px solid var(--gold);margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:12px">
+        <div>
+          <div class="sec-no" style="margin-bottom:4px">Welcome to LEASE</div>
+          <div style="font-family:'Source Serif 4',Georgia,serif;font-size:18px;font-weight:600">Built by an Ontario small landlord, for Ontario small landlords</div>
+        </div>
+        <button class="small" onclick="localStorage.setItem('lease:welcomeDismissed','1');document.getElementById('welcome-panel').remove()" style="white-space:nowrap;flex-shrink:0;border-color:var(--line);color:var(--muted)">Dismiss</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px">
+        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:12px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">01 · Screen</div>
+          <div style="font-weight:600;margin-bottom:4px">Screen applicants</div>
+          <div style="font-size:13px;color:var(--muted)">PIPEDA-compliant criteria, income checks, document review, immutable decision log.</div>
+        </div>
+        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:12px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">02 · Lease</div>
+          <div style="font-weight:600;margin-bottom:4px">Generate the lease</div>
+          <div style="font-size:13px;color:var(--muted)">Ontario Standard Lease Form 2229E, pre-filled from your screening data. Download as PDF.</div>
+        </div>
+        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:12px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">03 · Notices</div>
+          <div style="font-weight:600;margin-bottom:4px">File LTB notices</div>
+          <div style="font-size:13px;color:var(--muted)">N4, N5, N7, N8, N12, N13 — wizard guides you to the right form with official Tribunals Ontario links.</div>
+        </div>
+      </div>
+      <div style="font-size:13px;color:var(--muted)">No account. No fees. Your data never leaves this browser. <strong style="color:var(--ink)">Completely free, always.</strong></div>
+    </div>`:'';
+    el.innerHTML = welcomeHtml+`<div class="panel">${privacyBannerHtml()}<h3>Screen a tenant, get a PDF report</h3>
       <p class="hint">Add the applicant, lock your criteria, record each check (with the applicant's consent where needed), and download a report. Everything is stored only in this browser.</p>
       <div class="actions"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="sampleScreening()">Try a sample applicant</button></div></div>`;
     return;
@@ -957,7 +993,7 @@ function buildPdf(m, JsPDF){
   function section(t){ need(40); y+=10; txt(t,{size:12,bold:true,font:'times'}); doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.8); doc.line(M,y,W-M,y); y+=8; }
   // header band
   doc.setFillColor.apply(doc,INK); doc.rect(0,0,W,84,'F');
-  doc.setTextColor(248,245,239); doc.setFont('times','bold'); doc.setFontSize(22); doc.text('Tenant Screening Report',M,40);
+  doc.setTextColor(248,245,239); doc.setFont('times','bold'); doc.setFontSize(22); doc.text('LEASE — Screening Report',M,40);
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text(pdfClean('Ontario residential tenancy | Ref '+m.id+' | Generated '+fmtDT(m.generatedAt)),M,60);
   if(m.outcome.final==='incomplete'){ doc.setTextColor(217,183,122); doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.text('DRAFT - INCOMPLETE',W-M-110,40); }
   y=102;
@@ -2576,8 +2612,8 @@ function buildLeasePdf(){
   doc.setFillColor(245,248,252); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.3);
   doc.rect(ML,y,CW,24,'FD');
   sf('helvetica','italic',7,GRAY);
-  doc.text(pdfClean('Generated from Ontario Standard Lease Form 2229E (December 2020) — does not constitute legal advice.'),ML+4,y+9);
-  doc.text(pdfClean('Official blank form: forms.mgcs.gov.on.ca/en/dataset/047-2229   —   Store securely; contains personal information.'),ML+4,y+19);
+  doc.text(pdfClean('LEASE — Landlord Essentials: Applicants, Screening & Evictions  |  Screen. Lease. Done.'),ML+4,y+9);
+  doc.text(pdfClean('Built by an Ontario small landlord, for Ontario small landlords — completely free, always.  |  forms.mgcs.gov.on.ca/en/dataset/047-2229'),ML+4,y+19);
   y+=30;
 
   // ── PAGE HEADERS / FOOTERS ────────────────────────────────────
@@ -2589,7 +2625,7 @@ function buildLeasePdf(){
     doc.setFillColor(240,240,240); doc.rect(0,H-MB,W,MB,'F');
     doc.setDrawColor(210,210,210); doc.setLineWidth(0.3); doc.line(0,H-MB,W,H-MB);
     sf('helvetica','normal',7,GRAY);
-    doc.text(pdfClean('Ontario Standard Lease (Form 2229E, Dec 2020) — '+s.id.toUpperCase()),ML,H-MB+11);
+    doc.text(pdfClean('LEASE — Landlord Essentials: Applicants, Screening & Evictions  |  Form 2229E  |  '+s.id.toUpperCase()),ML,H-MB+11);
     doc.text('Page '+p+' of '+pages,W-MR,H-MB+11,{align:'right'});
   }
   return doc;
