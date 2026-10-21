@@ -131,13 +131,13 @@ const OUTCOME_LABEL = {met:'Meets criteria', not_met:'Does not meet criteria', r
 const DIMS = [
   {key:'identity', short:'ID', name:'Identity verification', req:true, desc:'Sight a government photo ID and confirm the name matches the application.',
    sources:['Government photo ID sighted in person','ID copy supplied by applicant'], choose:true},
-  {key:'credit', short:'Credit', name:'Credit report', req:true, consent:'credit', desc:'Enter the score from a licensed bureau report. Status is worked out from the minimum you locked.',
-   sources:['Equifax Canada (applicant-supplied)','TransUnion Canada (applicant-supplied)','Equifax / TransUnion direct','FrontLobby','Certn','Other licensed provider'], link:['Equifax Canada','https://www.equifax.ca']},
+  {key:'credit', short:'Credit', name:'Credit report', req:true, consent:'credit', desc:'Option A (free): applicant uploads their own Equifax or TransUnion PDF — score is read automatically from the document. Option B (paid ~$25): you pull directly from a bureau or screening provider. Both require applicant consent. Status is worked out from the minimum you locked.',
+   sources:['Equifax Canada (applicant-supplied)','TransUnion Canada (applicant-supplied)','Equifax Canada (direct pull)','TransUnion Canada (direct pull)','FrontLobby','Certn','Naborly','Other licensed provider'], link:['Equifax Canada','https://www.equifax.ca']},
   {key:'income', short:'Income', name:'Income and affordability', req:true, desc:'Collected only alongside the credit check (O. Reg. 290/98). Answer yes/no: does income cover the rent? The rent-to-income number is information only and never decides the outcome.',
    sources:['Recent paystubs','Employment letter','CRA Notice of Assessment','Bank statements']},
-  {key:'employment', short:'Employer', name:'Employment verification', consent:'employment', desc:'Optional. Confirms the employer and role the applicant stated.', sources:['Employer contacted by phone/email','Employment letter','Preliminary: payslip analysis and public web search']},
-  {key:'references', short:'Refs', name:'Rental history and landlord references', consent:'reference', refDim:true, desc:'Contact current and previous landlords with the same questions for every applicant.',
-   sources:['Current landlord','Previous landlord','Landlord letter']},
+  {key:'employment', short:'Employer', name:'Employment verification', consent:'employment', desc:'Part 1 (always): employer, role, and salary read automatically from documents. Part 2 (optional): contact the employer directly — requires applicant consent.', sources:['Employment letter (auto-read)','Paystubs (auto-read)','Preliminary: payslip analysis and public web search','Employer contacted by phone/email']},
+  {key:'references', short:'Refs', name:'Rental history and landlord references', consent:'reference', refDim:true, desc:'Part 1 (always): tenancy details read automatically from uploaded lease. Part 2 (optional): contact the previous landlord — requires applicant consent.',
+   sources:['Previous lease (auto-read)','Current landlord contacted','Previous landlord contacted']},
   {key:'ltb', short:'LTB', name:'LTB decisions (public record)', consent:'public', desc:'Look for Landlord and Tenant Board orders against the applicant. A confirmed arrears order is flagged for your review, not an automatic fail, and the applicant should get a chance to respond.',
    sources:['LTB Open Data Catalogue','CanLII','Tribunals Ontario decisions search'], link:['CanLII','https://www.canlii.org']},
   {key:'court', short:'Courts', name:'Court records (civil / small claims)', consent:'public', desc:'Search for civil judgments relating to rent or property.',
@@ -556,19 +556,337 @@ function renderEditor(el){
     <button class="small danger" onclick="removeScreening('${s.id}')">${ui.confirmDelete===s.id?'Click again to delete':'Delete'}</button></div>`;
   refreshLive();
 }
+function refsBodyHtml(s){
+  const D=s.docs||[];
+  const leases=D.filter(d=>d.type==='lease');
+  const consentOk=!!(s.consents&&s.consents.reference&&s.consents.reference.given);
+
+  // stat pill (same pattern as income)
+  const stat=(label,val)=>val?`<div style="background:#F8F5EF;border:1px solid var(--line);border-radius:4px;padding:6px 10px;min-width:110px">
+    <div class="hint" style="margin:0 0 2px;font-size:11px">${esc(label)}</div>
+    <b style="font-size:13px">${esc(String(val))}</b>
+  </div>`:'';
+
+  // ── Part 1: docs ──
+  let docsHtml='';
+  if(leases.length){
+    docsHtml=leases.map(ls=>{
+      const f=ls.f;
+      return `<div class="doccheck" style="border-style:solid;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          <b style="font-size:13px">Previous lease</b>
+          <span class="badge">${esc(ls.fileName)}</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${stat('Landlord / company',f.landlord||null)}
+          ${stat('Tenancy address',f.address||null)}
+          ${stat('Rent',f.rent!=null?fmtMoney(f.rent)+'/mo':null)}
+          ${stat('Start',f.start||null)}
+          ${stat('End',f.end||null)}
+          ${stat('Tenant name on lease',f.tenant||null)}
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    docsHtml=`<div class="hint" style="margin:0 0 8px">No previous lease uploaded yet. Upload one in Documents (step 2) — landlord name, address, and tenancy dates will appear here automatically.</div>`;
+  }
+
+  // ── Part 2: contact outreach (consent-gated) ──
+  const part2Open=!!(s.refs&&s.refs.part2Open);
+  const part2Btn=`<button class="small" style="margin-top:10px" onclick="toggleRefsPart2()">${part2Open?'Hide contact outreach ▴':'Contact previous landlord (optional) ▾'}</button>`;
+  let part2Html='';
+  if(part2Open){
+    part2Html=`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+      <p class="hint" style="margin:0 0 8px"><b>Part 2 — Direct landlord contact</b><br>Only if you need it. Requires applicant consent below. Contact each applicant the same way.</p>
+      ${consentOk?'':`<div class="note" style="margin-bottom:8px">Tick the consent at the top of this section first.</div>`}
+      ${mailPanelHtml(s,'landlord')}
+    </div>`;
+  }
+
+  // ── owner result row ──
+  const ck=s.checks.references||{};
+  const resultRow=`<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:8px">
+    <p class="hint" style="margin:0 0 6px"><b>Your call</b> — record the outcome after reviewing the lease and any landlord contact:</p>
+    <div class="row"><div class="field"><label>Reference outcome</label>
+      <select onchange="setvR('checks.references.status',this.value)">
+        ${['unchecked','clear','concern','na'].map(v=>`<option value="${v}" ${(ck.status||'unchecked')===v?'selected':''}>${STATUS_LABEL[v]}</option>`).join('')}
+      </select>
+    </div></div>
+  </div>`;
+
+  return `<div style="margin-bottom:4px"><b style="font-size:13px">Part 1 — From uploaded documents</b></div>`
+    +docsHtml+part2Btn+part2Html+resultRow;
+}
+function toggleRefsPart2(){ const s=cur(); if(!s) return; s.refs=s.refs||{}; s.refs.part2Open=!s.refs.part2Open; s.updatedAt=nowISO(); save(); render(); }
+
+function employmentBodyHtml(s){
+  const D=s.docs||[];
+  const lt=D.find(d=>d.type==='letter');
+  const ps=D.filter(d=>d.type==='paystub');
+  const consentOk=!!(s.consents&&s.consents.employment&&s.consents.employment.given);
+
+  const stat=(label,val,sub)=>val?`<div style="background:#F8F5EF;border:1px solid var(--line);border-radius:4px;padding:6px 10px;min-width:110px">
+    <div class="hint" style="margin:0 0 2px;font-size:11px">${esc(label)}</div>
+    <b style="font-size:13px">${esc(String(val))}</b>${sub?`<span class="hint" style="margin:0 0 0 5px;font-size:11px">${esc(sub)}</span>`:''}
+  </div>`:'';
+
+  // ── Part 1: docs summary ──
+  let docsHtml='';
+  if(lt||ps.length){
+    const ltCard=lt?`<div class="doccheck" style="border-style:solid;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <b style="font-size:13px">${esc(lt.f.employer||'Employer not read')} — Employment letter</b>
+        <span class="badge">${esc(lt.fileName)}${lt.f.letterDate?' · '+lt.f.letterDate:''}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${stat('Employee',lt.f.employee||null)}
+        ${stat('Title / role',lt.f.title||null)}
+        ${stat('Type',lt.f.type?lt.f.type.charAt(0).toUpperCase()+lt.f.type.slice(1):null)}
+        ${stat('Start date',lt.f.start||null)}
+        ${stat('Stated salary',lt.f.payText||null)}
+        ${lt.f.phone?`<div class="hint" style="margin:4px 0 0;flex-basis:100%">Phone on letter: ${esc(lt.f.phone)} — look up the employer's published number yourself; do not rely on this.</div>`:''}
+      </div>
+    </div>`:'';
+
+    const psCards=ps.map(p=>{
+      const f=p.f; const plaus=payrollPlausibility(f);
+      const flags=[['cpp',plaus.cpp],['ei',plaus.ei],['tax',plaus.tax]].filter(([,x])=>x&&x.st==='off');
+      return `<div class="doccheck" style="border-style:solid;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          <b style="font-size:13px">${esc(f.employer||'Employer not read')} — Paystub</b>
+          <span class="badge">${esc(p.fileName)}${f.payDate?' · '+f.payDate:''}</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${stat('Employee',f.employee||null)}
+          ${stat('Frequency',f.freq?FREQ_LABEL[f.freq]:null)}
+          ${stat('Gross',f.gross!=null?fmtMoney(f.gross):null,'per period')}
+          ${stat('Net pay',f.net!=null?fmtMoney(f.net):null)}
+          ${stat('Monthly gross',f.monthly!=null?fmtMoney(f.monthly):null,'est.')}
+        </div>
+        ${flags.length?`<div class="hint" style="margin:4px 0 0;color:var(--amber)">⚠ Payroll: ${flags.map(([k])=>k.toUpperCase()).join(', ')} deduction(s) differ from expected.</div>`:''}
+      </div>`;
+    }).join('');
+
+    // cross-check: employer name agreement
+    let crossCheck='';
+    if(lt&&ps.length){
+      const same=orgSame(lt.f.employer,ps[0].f.employer);
+      const color=same===true?'var(--green)':same===false?'var(--red)':'var(--muted)';
+      crossCheck=`<div class="hint" style="margin:0 0 8px;color:${color}">${same===true?'✓ Employer name agrees on letter and paystub':same===false?'⚠ Employer name differs between letter and paystub':'○ Employer names not compared'}</div>`;
+    }
+
+    docsHtml=`<div style="margin-bottom:4px"><b style="font-size:13px">Part 1 — From uploaded documents</b></div>`+ltCard+psCards+crossCheck;
+  } else {
+    docsHtml=`<div style="margin-bottom:4px"><b style="font-size:13px">Part 1 — From uploaded documents</b></div>
+      <div class="hint" style="margin:0 0 8px">No employment letter or paystubs uploaded yet. Upload them in Documents (step 2).</div>`;
+  }
+
+  // ── preliminary check ──
+  const prelimHtml=prelimPanelHtml(s);
+
+  // ── Part 2: direct contact (consent-gated, collapsible) ──
+  const part2Open=!!(s.employ&&s.employ.part2Open);
+  const part2Btn=`<button class="small" style="margin-top:10px" onclick="toggleEmployPart2()">${part2Open?'Hide employer contact ▴':'Contact employer directly (optional) ▾'}</button>`;
+  let part2Html='';
+  if(part2Open){
+    part2Html=`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+      <p class="hint" style="margin:0 0 8px"><b>Part 2 — Direct employer contact</b><br>Only if preliminary check is inconclusive or you want certainty. Requires applicant consent below.</p>
+      ${consentOk?'':`<div class="note" style="margin-bottom:8px">Tick the consent at the top of this section first.</div>`}
+      ${mailPanelHtml(s,'employer')}
+      <label class="consent" style="margin-top:8px"><input type="checkbox" ${(s.docConfirm&&s.docConfirm.employer)?'checked':''} onchange="setvR('docConfirm.employer',this.checked)"> I confirmed the employer directly (call or email to a number I looked up myself).</label>
+    </div>`;
+  }
+
+  return docsHtml+prelimHtml+part2Btn+part2Html;
+}
+function toggleEmployPart2(){ const s=cur(); if(!s) return; s.employ=s.employ||{}; s.employ.part2Open=!s.employ.part2Open; s.updatedAt=nowISO(); save(); render(); }
+
+function incomeBodyHtml(s){
+  const D=s.docs||[];
+  const ps=D.filter(d=>d.type==='paystub');
+  const lt=D.find(d=>d.type==='letter');
+  const noa=D.find(d=>d.type==='noa');
+  const t4=D.find(d=>d.type==='t4');
+  const est=incomeEstimate(s);
+  const rent=Number(s.rental.rent)||0;
+  const monthly=s.income.monthly!==''&&s.income.monthly!=null?Number(s.income.monthly):(est?est.monthly:null);
+  const r2iVal=monthly&&rent?Math.round(rent/monthly*100):null;
+
+  // helper: read-only stat pill
+  const stat=(label,val,sub)=>val!=null?`<div style="background:#F8F5EF;border:1px solid var(--line);border-radius:4px;padding:6px 10px;min-width:120px">
+    <div class="hint" style="margin:0 0 2px;font-size:11px">${esc(label)}</div>
+    <b style="font-size:14px">${esc(String(val))}</b>${sub?`<span class="hint" style="margin:0 0 0 5px;font-size:11px">${esc(sub)}</span>`:''}
+  </div>`:'';
+
+  // ── paystub section ──
+  let psHtml='';
+  if(ps.length){
+    const rows=ps.map(p=>{
+      const f=p.f;
+      const monthly_=f.monthly?fmtMoney(f.monthly):null;
+      const annual=f.monthly?fmtMoney(Math.round(f.monthly*12)):null;
+      const plaus=payrollPlausibility(f);
+      const flags=[plaus.cpp,plaus.ei,plaus.tax].filter(x=>x&&x.st==='off').map(x=>Object.keys(plaus).find(k=>plaus[k]===x));
+      return `<div class="doccheck" style="border-style:solid;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          <b style="font-size:13px">${esc(f.employer||'Employer not read')} — Paystub</b>
+          <span class="badge">${esc(p.fileName)}${f.payDate?' · '+f.payDate:''}</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+          ${stat('Gross (period)',f.gross!=null?fmtMoney(f.gross):null)}
+          ${stat('Net pay',f.net!=null?fmtMoney(f.net):null)}
+          ${stat('Frequency',f.freq?FREQ_LABEL[f.freq]:null)}
+          ${stat('Monthly gross (est.)',monthly_,annual?'('+annual+'/yr)':null)}
+          ${stat('YTD gross',f.ytd!=null?fmtMoney(f.ytd):null)}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${flags.length?'6':'0'}px">
+          ${stat('Employee',f.employee||null)}
+          ${stat('Period',f.periodStart&&f.periodEnd?f.periodStart+' → '+f.periodEnd:f.periodEnd||null)}
+          ${stat('CPP deducted',f.cpp!=null?fmtMoney(f.cpp):null,plaus.cpp&&plaus.cpp.st==='off'?'⚠ expected ~'+fmtMoney(plaus.cpp.exp):null)}
+          ${stat('EI deducted',f.ei!=null?fmtMoney(f.ei):null,plaus.ei&&plaus.ei.st==='off'?'⚠ expected ~'+fmtMoney(plaus.ei.exp):null)}
+          ${stat('Income tax',f.tax!=null?fmtMoney(f.tax):null)}
+        </div>
+        ${flags.length?`<div class="hint" style="margin:0;color:var(--amber)">⚠ Payroll plausibility: ${flags.join(', ')} deduction(s) differ from expected. Check the original.</div>`:''}
+      </div>`;
+    }).join('');
+    psHtml=`<div style="margin-bottom:4px"><b style="font-size:13px">Paystubs (${ps.length})</b></div>${rows}`;
+  }
+
+  // ── employment letter section ──
+  let ltHtml='';
+  if(lt){
+    const f=lt.f;
+    ltHtml=`<div class="doccheck" style="border-style:solid;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <b style="font-size:13px">${esc(f.employer||'Employer not read')} — Employment letter</b>
+        <span class="badge">${esc(lt.fileName)}${f.letterDate?' · '+f.letterDate:''}</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${stat('Employee',f.employee||null)}
+        ${stat('Title / role',f.title||null)}
+        ${stat('Employment type',f.type?f.type.charAt(0).toUpperCase()+f.type.slice(1):null)}
+        ${stat('Start date',f.start||null)}
+        ${stat('Stated salary',f.payText||null)}
+        ${stat('Annual (calc.)',f.annual!=null?fmtMoney(f.annual):null)}
+        ${stat('Monthly (calc.)',f.annual!=null?fmtMoney(Math.round(f.annual/12)):null)}
+      </div>
+    </div>`;
+  }
+
+  // ── NOA / T4 ──
+  let taxHtml='';
+  if(noa||t4){
+    const src=noa||t4; const f=src.f; const kind=noa?'CRA Notice of Assessment':'T4 slip';
+    const inc=noa?f.totalIncome:f.employment;
+    taxHtml=`<div class="doccheck" style="border-style:solid;margin-bottom:8px">
+      <b style="font-size:13px">${kind}${f.year?' ('+f.year+')':''}</b>
+      <span class="hint" style="margin:0 0 6px 8px">${esc(src.fileName)}</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        ${stat(noa?'Total income':'Employment income',inc!=null?fmtMoney(inc):null,'prior year')}
+        ${stat('Monthly equiv.',inc!=null?fmtMoney(Math.round(inc/12)):null)}
+        ${noa&&f.netIncome!=null?stat('Net income',fmtMoney(f.netIncome),'prior year'):''}
+      </div>
+    </div>`;
+  }
+
+  // ── no docs yet ──
+  const noDocs=!ps.length&&!lt&&!noa&&!t4;
+
+  // ── estimate banner ──
+  let estBanner='';
+  if(est){
+    estBanner=`<div style="background:#EEF7EE;border:1px solid var(--green);border-radius:4px;padding:8px 12px;margin-bottom:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:15px;font-weight:700">${fmtMoney(est.monthly)}<span style="font-size:12px;font-weight:400;color:var(--muted)">/month estimated gross</span></span>
+      ${rent?`<span style="font-size:13px">Rent-to-income: <b id="r2i">${r2iVal!=null?r2iVal+'%':'—'}</b> <span class="hint" style="margin:0">(information only)</span></span>`:'<span class="hint" style="margin:0" id="r2i"></span>'}
+      <span class="hint" style="margin:0;flex-basis:100%">Source: ${esc(est.basis)}</span>
+    </div>`;
+  }
+
+  // ── owner decision row ──
+  const decisionRow=`<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:4px">
+    <p class="hint" style="margin:0 0 8px"><b>Your call</b> — review the figures above and answer:</p>
+    <div class="row">
+      ${inp('income.monthly','Confirmed monthly income ($)','number',s.income.monthly,'min="0" oninput="liveR2I()" placeholder="'+(est?String(Math.round(est.monthly)):'enter amount')+'"')}
+      <div class="field"><label>Does income cover the rent?</label>
+        <select onchange="setvR('income.sufficient',this.value)">
+          <option value="">Select…</option>
+          <option value="yes" ${s.income.sufficient==='yes'?'selected':''}>Yes</option>
+          <option value="no" ${s.income.sufficient==='no'?'selected':''}>No</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint" style="margin:2px 0 0">The confirmed amount is for the record. The yes/no is your assessment — it is the only thing that sets the check status.</p>
+  </div>`;
+
+  return (noDocs?`<div class="note">No paystubs, employment letter, or tax documents uploaded yet. Go to Documents (step 2) and upload them — fields here will fill in automatically.</div>`:'')
+    +estBanner+psHtml+ltHtml+taxHtml+decisionRow;
+}
+const CREDIT_PROVIDERS=[
+  {name:'Equifax Canada (direct)',url:'https://www.equifax.ca/personal/products/credit-report-score-monitoring/',cost:25},
+  {name:'TransUnion Canada (direct)',url:'https://www.transunion.ca/product/credit-report',cost:25},
+  {name:'FrontLobby',url:'https://frontlobby.com',cost:20},
+  {name:'Certn',url:'https://certn.co',cost:25},
+  {name:'Naborly',url:'https://naborly.com',cost:20},
+  {name:'Other provider',url:'',cost:25}
+];
+function creditBodyHtml(s){
+  const cr=(s.docs||[]).find(d=>d.type==='credit');
+  const autoScore=cr&&cr.f&&cr.f.score!=null?cr.f.score:null;
+  const autoDoc=cr?cr:null;
+  const mode=s.credit.pullMode||'applicant'; // 'applicant' | 'owner'
+  const providerIdx=s.credit.providerIdx!=null?s.credit.providerIdx:0;
+  const provider=CREDIT_PROVIDERS[providerIdx]||CREDIT_PROVIDERS[0];
+
+  // Part A — applicant-supplied (free)
+  const partA=`<div class="doccheck" style="border-style:solid;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+      <div><b>Option A — Applicant-supplied report</b> <span class="badge" style="background:var(--green);color:#fff">Free · $0</span></div>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="creditMode_${s.id}" value="applicant" ${mode==='applicant'?'checked':''} onchange="setCreditMode('applicant')"> Use this option</label>
+    </div>
+    <p class="hint" style="margin:4px 0 8px">Ask the applicant to upload their own Equifax or TransUnion PDF from Documents (step 2). No cost. Authenticity is checked in-browser.</p>
+    ${autoDoc?`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <span class="chip ${autoScore!=null?'c-clear':'c-warn'}">${autoScore!=null?'Score read: '+autoScore:'Score not read'}</span>
+      <span class="badge">${esc(autoDoc.fileName)} · ${autoDoc.f.bureau||'bureau unknown'}${autoDoc.f.reportDate?' · '+autoDoc.f.reportDate:''}</span>
+      ${autoScore!=null&&s.credit.autoFrom===autoDoc.id?`<span class="hint" style="margin:0">Auto-filled below</span>`:''}
+    </div>`:'<div class="hint" style="margin:0 0 6px">No credit report uploaded yet — go to Documents (step 2) and upload the applicant\'s report PDF.</div>'}
+    <div class="row">${inp('credit.score','Credit score','number',s.credit.score,'min="300" max="900"')}</div>
+    ${docCheckHtml(s)}
+  </div>`;
+
+  // Part B — owner-initiated pull (paid)
+  const costNote=`~$${provider.cost}/applicant`;
+  const partB=`<div class="doccheck" style="border-style:solid">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+      <div><b>Option B — Owner-initiated credit pull</b> <span class="badge" style="background:var(--amber);color:#333">${costNote}</span></div>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="creditMode_${s.id}" value="owner" ${mode==='owner'?'checked':''} onchange="setCreditMode('owner')"> Use this option</label>
+    </div>
+    <p class="hint" style="margin:4px 0 8px">You pull directly from a bureau or screening provider. Requires applicant consent and your own account with the provider. Average cost ~$25 per applicant.</p>
+    <div class="row"><div class="field"><label>Provider</label><select onchange="setCreditProvider(this.value)">
+      ${CREDIT_PROVIDERS.map((p,i)=>`<option value="${i}" ${i===providerIdx?'selected':''}>${esc(p.name)} (~$${p.cost})</option>`).join('')}
+    </select></div></div>
+    ${provider.url?`<p class="hint" style="margin:2px 0 8px">Open your account: <a href="${esc(provider.url)}" target="_blank" rel="noopener">${esc(provider.name)} ↗</a></p>`:''}
+    <div class="row">${inp('credit.score','Credit score (enter after you pull)','number',s.credit.score,'min="300" max="900"')}</div>
+  </div>`;
+
+  return partA+partB;
+}
+function setCreditMode(mode){ const s=cur(); if(!s) return; s.credit.pullMode=mode; s.updatedAt=nowISO(); save(); render(); }
+function setCreditProvider(idx){ const s=cur(); if(!s) return; s.credit.providerIdx=Number(idx); s.updatedAt=nowISO(); save(); render(); }
 function dimCard(s,d){
   const ck=s.checks[d.key]||{}; const ok=consentOK(s,d);
   let body='';
-  if(!ok){ body=''; }
+  if(d.key==='references'){
+    body=refsBodyHtml(s);
+  } else if(d.key==='employment'){
+    body=employmentBodyHtml(s);
+  } else if(!ok){ body=''; }
   else if(d.key==='credit'){
-    body=`<div class="row">${inp('credit.score','Credit score','number',s.credit.score,'min="300" max="900"')}</div>`+docCheckHtml(s);
+    body=creditBodyHtml(s);
   } else if(d.key==='income'){
-    body=`<div class="row">${inp('income.monthly','Verified monthly income ($)','number',s.income.monthly,'min="0" oninput="liveR2I()"')}
-      <div class="field"><label>Does income cover the rent?</label><select onchange="setvR('income.sufficient',this.value)"><option value="">Select…</option><option value="yes" ${s.income.sufficient==='yes'?'selected':''}>Yes</option><option value="no" ${s.income.sufficient==='no'?'selected':''}>No</option></select></div></div>
-      <p class="hint">Rent-to-income (information only, never a cut-off): <b id="r2i"></b></p>`;
+    body=incomeBodyHtml(s);
   }
   let common='';
-  if(ok && d.key!=='credit' && d.key!=='income'){
+  if(ok && !['credit','income','references','employment'].includes(d.key)){
     common=`<div class="row"><div class="field"><label>Result</label><select onchange="setvR('checks.${d.key}.status',this.value)">
       ${['unchecked','clear','concern','na'].map(v=>`<option value="${v}" ${(ck.status||'unchecked')===v?'selected':''}>${STATUS_LABEL[v]}</option>`).join('')}</select></div></div>`;
   }
@@ -577,9 +895,9 @@ function dimCard(s,d){
     <div class="field"><label>Note (facts only)</label><textarea rows="2" onchange="setv('checks.${d.key}.note',this.value)">${esc(ck.note)}</textarea></div>` : '';
   return `<div class="dim"><div class="dim-h"><div><b>${d.name}</b>${d.req?'<span class="badge">required</span>':(d.refDim?'<span class="badge">per criteria</span>':'<span class="badge">optional</span>')}</div><span data-chip="${d.key}"></span></div>
     <p class="hint" style="margin:4px 0">${d.desc}${d.link?` <a href="${d.link[1]}" target="_blank" rel="noopener">${d.link[0]} ↗</a>`:''}</p>
-    ${d.consent?`<label class="consent"><input type="checkbox" ${ok?'checked':''} onchange="toggleConsent('${d.consent}',this.checked)"> Applicant consent: ${CONSENTS[d.consent]}${ok&&s.consents[d.consent]?` <span class="badge">${esc(fmtDT(s.consents[d.consent].at))}</span>`:''}</label>`:''}
-    ${ok?'':'<div class="note">Awaiting consent. This check cannot be recorded without it.</div>'}
-    ${ok?sectionChecksHtml(s,d.key)+manualBannerHtml(s,d.key):''}${d.key==='ltb'&&ok?ltbPanelHtml(s):''}${['bankruptcy','court','police'].includes(d.key)&&ok?searchPackHtml(s,d.key):''}${d.key==='employment'&&ok?prelimPanelHtml(s):''}${(d.key==='references'||d.key==='employment')&&ok?mailPanelHtml(s,d.key==='references'?'landlord':'employer'):''}${body}${common}${srcRow}</div>`;
+    ${d.consent&&!['references','employment'].includes(d.key)?`<label class="consent"><input type="checkbox" ${ok?'checked':''} onchange="toggleConsent('${d.consent}',this.checked)"> Applicant consent: ${CONSENTS[d.consent]}${ok&&s.consents[d.consent]?` <span class="badge">${esc(fmtDT(s.consents[d.consent].at))}</span>`:''}</label>`:''}
+    ${ok||['references','employment'].includes(d.key)?'':'<div class="note">Awaiting consent. This check cannot be recorded without it.</div>'}
+    ${(ok||['references','employment'].includes(d.key))?sectionChecksHtml(s,d.key)+manualBannerHtml(s,d.key):''}${d.key==='ltb'&&ok?ltbPanelHtml(s):''}${['bankruptcy','court','police'].includes(d.key)&&ok?searchPackHtml(s,d.key):''}${body}${common}${srcRow}</div>`;
 }
 const PACK={
   bankruptcy:{title:'Insolvency search pack',intro:'The federal OSB records search is run on the government site (a fee of about $8 applies). This pack gives you the details to enter and keeps a record that you searched.',
@@ -1138,7 +1456,7 @@ function downloadPdf(){
    pulls out the fields, cross-checks them, and proposes values for the checks. Nothing is uploaded anywhere.
    Only the extracted fields are kept, never the image or the full text. */
 const DOC_TYPES={id:'Photo ID',paystub:'Paystub',noa:'CRA Notice of Assessment',t4:'T4 slip',letter:'Employment letter',credit:'Credit report',bank:'Bank statement',lease:'Previous lease',osb:'OSB insolvency search result',police:'Police record check (applicant-supplied)',court:'Court records search result',other:'Unrecognized document'};
-const DOC_MEM={}; const DOC_ST={busy:false,applied:[]};
+const DOC_MEM={}; const DOC_ST={busy:false,applied:[],collapsed:false}; const MAX_DOCS=10;
 const PADDLE_OCR_URL='https://cdn.jsdelivr.net/npm/@paddlejs-models/ocr@1.2.4/lib/index.js';
 const TESSERACT_OCR_URL='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 
@@ -1500,18 +1818,30 @@ async function readOne(s,file){
   const d={id,fileName:file.name,size:file.size,sha256:sha,type,typeAuto,method,conf,ocrLabel,readAt:nowISO(),f:ex.f,notes:ex.notes,guess:ex.guess||{},over:{},auth,nameHit:null};
   (s.docs||(s.docs=[])).push(d); DOC_MEM[id]={text,lines,csvRows,file};
   if(type==='id'&&!s.applicant.name&&ex.f.name) s.applicant.name=ex.f.name;
+  if(type==='credit'&&ex.f.score!=null&&(s.credit.score===''||s.credit.score==null)){
+    s.credit.score=String(ex.f.score);
+    s.credit.autoFrom=id;
+  }
+  if(['paystub','letter','noa','t4'].includes(type)&&(s.income.monthly===''||s.income.monthly==null)){
+    const est=incomeEstimate(s); // recalculate after pushing the new doc
+    if(est) s.income.monthly=String(Math.round(est.monthly));
+  }
   refreshNameHits(s);
   if(method==='ocr'&&conf!=null&&conf<LOW_CONF) toast('Low OCR confidence ('+conf+'%) on '+file.name+' — check the values and correct any errors.');
 }
 function refreshNameHits(s){ (s.docs||[]).forEach(d=>{ const m=DOC_MEM[d.id]; if(m&&m.csvRows){ d.nameHit=null; return; } if(m&&s.applicant.name) d.nameHit=nameInText(s.applicant.name,m.text); }); }
 async function readDocFiles(files,hintType){
-  const s=cur(); if(!s||!files||!files.length) return; DOC_ST.busy=true; render();
+  const s=cur(); if(!s||!files||!files.length) return;
+  const arr=Array.from(files); const current=(s.docs||[]).length; const room=MAX_DOCS-current;
+  if(room<=0){ toast('Maximum '+MAX_DOCS+' documents reached. Remove one to add more.'); return; }
+  const toAdd=arr.slice(0,room); if(arr.length>room) toast('Adding '+room+' of '+arr.length+' files — '+MAX_DOCS+' document limit reached.');
+  DOC_ST.busy=true; render();
   window._docHint=hintType||null;
-  for(const file of Array.from(files)){ try{ setBusy('Reading '+file.name+'...'); await readOne(s,file); }catch(e){ console.error(e); toast('Could not read '+file.name+(/Could not load/.test(e.message)?' (OCR-P and OCR-T both unavailable — check your connection)':'')); } }
+  for(const file of toAdd){ try{ setBusy('Reading '+file.name+'...'); await readOne(s,file); }catch(e){ console.error(e); toast('Could not read '+file.name+(/Could not load/.test(e.message)?' (OCR-P and OCR-T both unavailable — check your connection)':'')); } }
   window._docHint=null; DOC_ST.busy=false; s.updatedAt=nowISO(); save(); render();
 }
 function onDocDrop(ev){ ev.preventDefault(); readDocFiles(ev.dataTransfer.files); }
-function removeDoc(id){ const s=cur(); if(!s) return; s.docs=(s.docs||[]).filter(d=>d.id!==id); delete DOC_MEM[id]; s.updatedAt=nowISO(); save(); render(); }
+function removeDoc(id){ const s=cur(); if(!s) return; s.docs=(s.docs||[]).filter(d=>d.id!==id); delete DOC_MEM[id]; if(s.credit&&s.credit.autoFrom===id){ s.credit.score=''; s.credit.autoFrom=null; } s.updatedAt=nowISO(); save(); render(); }
 function reclassifyDoc(id,type){ const s=cur(); const d=(s.docs||[]).find(x=>x.id===id); const m=DOC_MEM[id]; if(!d) return; if(!m){ toast('Add the file again to change its type'); render(); return; }
   d.type=type; const ex=extractDoc(type,m.lines,d.fileName,m.csvRows); d.f=ex.f; d.notes=ex.notes; d.guess=ex.guess||{}; d.over={}; refreshNameHits(s); s.updatedAt=nowISO(); save(); render(); }
 
@@ -1754,8 +2084,11 @@ async function applyDocs(){
   if(cr){
     if(!cons('credit')) log.push('Credit: skipped, record the credit-check consent first');
     else if(!blocked('credit','Credit')){
-      if(cr.f.score!=null) s.credit.score=String(cr.f.score);
-      s.checks.credit={status:'unchecked',source:cr.f.bureau==='TransUnion'?'TransUnion Canada (applicant-supplied)':'Equifax Canada (applicant-supplied)',date:cr.f.reportDate||today,note:'Auto-read from uploaded report ('+docScore(s,cr)+'% confidence)'+(cr.f.score==null?'; score could not be read, enter it':'')+(cr.f.collections?'; '+cr.f.collections+' collection item(s)':'')+'.'};
+      if(cr.f.score!=null){ s.credit.score=String(cr.f.score); s.credit.autoFrom=cr.id; }
+      const bureau=cr.f.bureau==='TransUnion'?'TransUnion Canada':'Equifax Canada';
+      const pullMode=s.credit.pullMode||'applicant';
+      const srcLabel=pullMode==='owner'?((CREDIT_PROVIDERS[s.credit.providerIdx!=null?s.credit.providerIdx:0]||CREDIT_PROVIDERS[0]).name):bureau+' (applicant-supplied)';
+      s.checks.credit={status:'unchecked',source:srcLabel,date:cr.f.reportDate||today,note:'Auto-read from uploaded report ('+docScore(s,cr)+'% confidence)'+(cr.f.score==null?'; score could not be read, enter it':'')+(cr.f.collections?'; '+cr.f.collections+' collection item(s)':'')+'.'};
       log.push('Credit: '+(cr.f.score!=null?'score '+cr.f.score+' filled in':'score not found'));
       const mem=DOC_MEM[cr.id];
       if(mem&&mem.file&&/\.pdf$/i.test(cr.fileName)){ try{ await runDocCheck(mem.file); log.push('Credit report authenticity check run'); }catch(e){} }
@@ -1856,7 +2189,7 @@ function docChecklistHtml(s){
     const m={id:()=>f.expiry?'expires '+f.expiry:'', paystub:()=>{ const ds=D.map(d=>d.f.payDate).filter(Boolean).sort(); return ds.length?'latest '+ds[ds.length-1]:''; }, credit:()=>(f.score!=null?'score '+f.score:'')+(f.reportDate?' · '+f.reportDate:''), bank:()=>f.periodStart?f.periodStart+' to '+f.periodEnd:'', letter:()=>f.employer||'', lease:()=>f.end?'ends '+f.end:'', noa:()=>f.year?'tax year '+f.year:'', t4:()=>f.year?'tax year '+f.year:'', osb:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:''), court:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:''), police:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:'')};
     const x=(m[r.type]||(()=>''))(); return n+(x||'added'); };
   const row=r=>{ const ok=r.have||r.altHave; const dot=`<span style="display:inline-flex;flex:none;width:18px;height:18px;border-radius:50%;border:2px solid ${ok?(r.low?'var(--amber)':'var(--green)'):'var(--line)'};background:${ok?(r.low?'var(--amber)':'var(--green)'):'#fff'};color:#fff;font-size:11px;font-weight:700;align-items:center;justify-content:center">${ok?(r.low?'!':'✓'):''}</span>`;
-    const uploadBtn=`<label style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;font-size:12px;font-weight:600;border:1px solid var(--ink);border-radius:3px;cursor:pointer;background:${ok?'transparent':'var(--ink)'};color:${ok?'var(--ink)':'#F8F5EF'};white-space:nowrap;flex-shrink:0">${ok?'Replace':'Upload'}<input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,application/pdf,image/*" style="display:none" onchange="readDocFiles(this.files,'${r.type}');this.value=''"></label>`;
+    const uploadBtn=`<label style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;font-size:12px;font-weight:600;border:1px solid var(--ink);border-radius:3px;cursor:pointer;background:${ok?'transparent':'var(--ink)'};color:${ok?'var(--ink)':'#F8F5EF'};white-space:nowrap;flex-shrink:0">${ok?'Add more':'Upload'}<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,application/pdf,image/*" style="display:none" onchange="readDocFiles(this.files,'${r.type}');this.value=''"></label>`;
     return `<li style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)">${dot}<span style="${ok?'':'font-weight:600'};flex:1;min-width:0">${esc(short[r.type]||r.name)}</span><span class="hint" style="margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">${ok?(r.low?'check it · ':'')+esc(detail(r)):esc(r.feeds.map(k=>DIM_NAME[k]).join(', '))}</span>${uploadBtn}</li>`; };
   return `<div class="doclist" style="margin:10px 0 14px;border:1px solid var(--line);border-radius:4px;background:#fff;padding:10px 12px">
     <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px"><b>Must-have documents</b><span class="badge" style="margin:0">${haveN} of ${need.length} added</span></div>
@@ -1873,12 +2206,15 @@ function docsPanelHtml(s){
     <div ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="border:1px dashed var(--line);border-radius:4px;padding:10px 14px;font-size:13px;color:var(--muted);text-align:center;margin-top:4px">Or drag &amp; drop any file here</div>
     <div id="docBusy" class="hint" style="min-height:18px">${DOC_ST.busy?'Reading...':''}</div>
     ${needs.length?`<div class="note" style="border-left:4px solid var(--red)"><b>Manual verification needed:</b> ${needs.map(k=>DIM_NAME[k]).join(', ')}. Confidence is under ${LOW_CONF}% for at least one document. Verify or override in the section itself (4 · Checks).</div>`:''}
-    ${D.map(d=>docCardHtml(s,d)).join('')}
-    ${checks.length?`<h4 style="margin:12px 0 6px;font-family:'Source Serif 4',serif">Cross-checks</h4>${marksHtml(checks.map(c=>({st:c.lvl,txt:c.txt})))}`:''}
-    ${est?`<div class="note"><b>Income estimate:</b> ${fmtMoney(est.monthly)}/month (${esc(est.basis)})${s.rental.rent?'. Rent-to-income '+Math.round(Number(s.rental.rent)/est.monthly*100)+'% (information only)':''}.</div>`:''}
+    ${(()=>{ if(!D.length) return '';
+      const hdr=`<div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 4px"><b style="font-size:13.5px">Analysed documents (${D.length}/${MAX_DOCS})</b><button class="small" onclick="DOC_ST.collapsed=!DOC_ST.collapsed;render()">${DOC_ST.collapsed?'Expand ▾':'Collapse ▴'}</button></div>`;
+      if(DOC_ST.collapsed) return hdr;
+      const cards=D.map(d=>docCardHtml(s,d)).join('');
+      const xchk=checks.length?`<h4 style="margin:12px 0 6px;font-family:'Source Serif 4',serif">Cross-checks</h4>${marksHtml(checks.map(c=>({st:c.lvl,txt:c.txt})))}` :'';
+      const inc=est?`<div class="note"><b>Income estimate:</b> ${fmtMoney(est.monthly)}/month (${esc(est.basis)})${s.rental.rent?'. Rent-to-income '+Math.round(Number(s.rental.rent)/est.monthly*100)+'% (information only)':''}.</div>`:'';
+      return hdr+cards+xchk+inc; })()}
     ${D.length?`<div class="consent" style="margin-top:10px"><input type="checkbox" ${conf.idPhoto?'checked':''} onchange="setvR('docConfirm.idPhoto',this.checked)"><span>I compared the ID photo with the applicant (in person or on video) and it matches.</span></div>
-      <div class="consent"><input type="checkbox" ${conf.employer?'checked':''} onchange="setvR('docConfirm.employer',this.checked)"><span>I confirmed the employer directly (call or email to a number I looked up myself).</span></div>
-      <p class="hint">Documents show what the applicant provided. The two boxes are your own verification, and the app will not mark Identity or Employment clear without them.</p>
+      <p class="hint">Documents show what the applicant provided. ID photo comparison is your own verification step — the app won't mark Identity clear without it.</p>
       <div class="actions noprint"><button class="primary" onclick="applyDocs()">Apply to the checks below</button></div>`:''}
     ${DOC_ST.applied.length?`<div class="note"><b>Applied:</b><ul style="margin:4px 0 0;padding-left:18px">${DOC_ST.applied.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}
   </div>`;
