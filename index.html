@@ -71,7 +71,7 @@ td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 a{color:var(--ink)}
 
 .stepper{position:sticky;top:0;z-index:6;background:var(--paper);padding:8px 0 10px;margin:0 0 12px;border-bottom:1px solid var(--line)}
-.steps{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:0;padding:0;list-style:none}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0;padding:0;list-style:none}
 .stbtn{width:100%;text-align:left;padding:7px 9px;border:1px solid var(--line);border-bottom:3px solid var(--line);border-radius:3px;background:var(--raised);display:block;line-height:1.2;min-height:48px}
 .stbtn .n{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
 .stbtn .l{display:block;font-weight:600;font-size:14px}
@@ -89,7 +89,7 @@ a{color:var(--ink)}
 .dot.c-clear{background:var(--green)}.dot.c-concern{background:var(--red)}.dot.c-review{background:var(--amber)}.dot.c-na{background:#9a8a66}
 .dimnext{display:flex;justify-content:flex-end;margin:-2px 0 12px}
 @media(max-width:820px){
-  .steps{grid-template-columns:repeat(6,minmax(104px,1fr));overflow-x:auto;padding-bottom:4px}
+  .steps{grid-template-columns:repeat(4,minmax(104px,1fr));overflow-x:auto;padding-bottom:4px}
   #list{display:flex;gap:8px;overflow-x:auto;align-items:stretch}#list .sec-no{display:none}#list .item{min-width:190px;margin:0}
 }
 @media print{
@@ -100,7 +100,7 @@ a{color:var(--ink)}
 </style>
 </head>
 <body>
-<div class="top"><div class="brand" style="display:flex;align-items:center;gap:16px"><span style="color:var(--gold);font-size:32px;font-weight:700;letter-spacing:.02em;font-family:'Source Serif 4',Georgia,serif;line-height:1;cursor:pointer" onclick="ui.view='home';render();window.scrollTo(0,0)">LEASE</span><div style="border-left:1px solid #2E4358;padding-left:16px;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:600;color:#F8F5EF;letter-spacing:-.01em;font-family:'Instrument Sans',sans-serif;line-height:1.2">Landlord Essentials: Applicants, Screening &amp; Evictions</span><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--gold);letter-spacing:.1em;text-transform:uppercase;line-height:1">Screen · Sign · Serve</span></div></div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="ui.view='notices';ui.noticeForm=null;ui.noticeQ1='';ui.noticeQ2='';render()" style="background:transparent;border-color:var(--gold);color:var(--gold)">LTB Notices</button></div></div>
+<div class="top"><div class="brand" style="display:flex;align-items:center;gap:16px"><span style="color:var(--gold);font-size:32px;font-weight:700;letter-spacing:.02em;font-family:'Source Serif 4',Georgia,serif;line-height:1;cursor:pointer" onclick="ui.view='home';render();window.scrollTo(0,0)">LEASE</span><div style="border-left:1px solid #2E4358;padding-left:16px;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:600;color:#F8F5EF;letter-spacing:-.01em;font-family:'Instrument Sans',sans-serif;line-height:1.2">Landlord Essentials: Applicants, Screening &amp; Evictions</span><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--gold);letter-spacing:.1em;text-transform:uppercase;line-height:1">Screen · Sign · Serve</span></div></div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="ui.view='notices';ui.noticeForm=null;ui.noticeQ1='';ui.noticeQ2='';render()" style="background:transparent;border-color:var(--gold);color:var(--gold)">LTB Notices</button><a href="https://www.buymeacoffee.com" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#FFDD00;color:#000;font-weight:700;font-size:13px;padding:7px 14px;border-radius:3px;text-decoration:none;border:1px solid #e6c800;white-space:nowrap">☕ Support</a></div></div>
 <div class="layout"><aside id="list"></aside><main id="main"></main></div>
 <div class="toast" id="toast"></div>
 <footer class="noprint" style="background:var(--ink);color:#6B8599;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.04em;padding:14px 20px;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center">
@@ -151,26 +151,24 @@ const DIMS = [
 /* ======================= STATE ======================= */
 let data = { screenings:[], owner:{name:'',address:'',phone:'',email:''}, ownerProfiles:[] };
 let ui = { view:'home', id:null, confirmDelete:null, ownerOpen:false, ownerTab:'edit', editingProfileId:null, noticeForm:null, noticeData:null, noticeQ1:'', noticeQ2:'' };
-const STEPS=[{n:1,l:'Applicant'},{n:2,l:'Criteria'},{n:3,l:'Documents'},{n:4,l:'Checks'},{n:5,l:'Result'},{n:6,l:'Rent Roll'}];
+const STEPS=[{n:1,l:'Setup'},{n:2,l:'Documents'},{n:3,l:'Checks'},{n:4,l:'Result'}];
 function stepInfo(s){
   const e=evaluate(s); const done=DIMS.filter(d=>dimStatus(s,d.key)!=='unchecked').length; const anyConcern=DIMS.some(d=>dimStatus(s,d.key)==='concern');
   const a=!!(s.applicant.name&&s.rental.property&&s.rental.rent);
   const docs=(s.docs||[]).length;
   return {
-    1:{c:a?'done':'',t:a?'Complete':'Name and rental needed'},
-    2:{c:s.criteria.lockedAt?'done':'',t:s.criteria.lockedAt?'Locked':'Not locked'},
-    3:{c:docs?'done':'',t:docs?docs+' read':'Optional'},
-    4:{c:DIMS.filter(d=>isMust(s,d)).every(d=>dimStatus(s,d.key)!=='unchecked')?(anyConcern?'warn':'done'):(done?'part':''),t:(()=>{ const mu=DIMS.filter(d=>isMust(s,d)); const md=mu.filter(d=>dimStatus(s,d.key)!=='unchecked').length; return 'Must haves '+md+'/'+mu.length+(anyConcern?' · concern':''); })()},
-    5:{c:e.final==='incomplete'?'':(e.final==='met'?'done':(e.final==='not_met'?'warn':'part')),t:OUTCOME_LABEL[e.final]||''},
-    6:{c:s.source&&s.source.sentAt?'done':'',t:s.source?'Linked':'Optional'}
+    1:{c:(a&&s.criteria.lockedAt)?'done':(a?'part':''),t:s.criteria.lockedAt?'Criteria locked':(a?'Lock criteria':'Applicant needed')},
+    2:{c:docs?'done':'',t:docs?docs+' read':'Optional'},
+    3:{c:DIMS.filter(d=>isMust(s,d)).every(d=>dimStatus(s,d.key)!=='unchecked')?(anyConcern?'warn':'done'):(done?'part':''),t:(()=>{ const mu=DIMS.filter(d=>isMust(s,d)); const md=mu.filter(d=>dimStatus(s,d.key)!=='unchecked').length; return 'Must haves '+md+'/'+mu.length+(anyConcern?' · concern':''); })()},
+    4:{c:e.final==='incomplete'?'':(e.final==='met'?'done':(e.final==='not_met'?'warn':'part')),t:OUTCOME_LABEL[e.final]||''}
   };
 }
-function smartStep(s){ const i=stepInfo(s); if(!s.applicant.name||!s.rental.property) return 1; if(!s.criteria.lockedAt) return 2; if(i[4].c===''||i[4].c==='part') return (s.docs||[]).length?4:3; return 5; }
+function smartStep(s){ const i=stepInfo(s); if(!s.applicant.name||!s.rental.property||!s.criteria.lockedAt) return 1; if(i[3].c===''||i[3].c==='part') return (s.docs||[]).length?3:2; return 4; }
 function stepperHtml(s){
   const i=stepInfo(s);
   return `<ol class="steps" role="list">${STEPS.map(st=>`<li><button class="stbtn ${i[st.n].c} ${ui.step===st.n?'on':''}" aria-current="${ui.step===st.n?'step':'false'}" onclick="goStep(${st.n})"><span class="n">${i[st.n].c==='done'?'✓':st.n}</span> <span class="l">${st.l}</span><span class="s">${esc(i[st.n].t)}</span></button></li>`).join('')}</ol>`;
 }
-function goStep(n){ ui.step=Math.max(1,Math.min(6,n)); render(); window.scrollTo({top:0,behavior:'smooth'}); }
+function goStep(n){ ui.step=Math.max(1,Math.min(4,n)); render(); window.scrollTo({top:0,behavior:'smooth'}); }
 function goDim(k){ ui.dim=k; render(); }
 function stp(n){ return ui.step===n?'on':''; }
 function stepWrap(n,html){ return `<div class="stp ${stp(n)}" data-step="${n}">${html}</div>`; }
@@ -190,11 +188,11 @@ function dimCardsHtml(s){
 }
 function dimNextHtml(s){
   const cur=ui.dim||'identity'; if(cur==='all') return ''; const O=dimOrder(s); const i=O.findIndex(d=>d.key===cur);
-  return i<O.length-1?`<div class="dimnext"><button class="small" onclick="goDim('${O[i+1].key}')">Next check: ${O[i+1].short} →</button></div>`:`<div class="dimnext"><button class="small primary" onclick="goStep(5)">All checks reviewed: see the result →</button></div>`;
+  return i<O.length-1?`<div class="dimnext"><button class="small" onclick="goDim('${O[i+1].key}')">Next check: ${O[i+1].short} →</button></div>`:`<div class="dimnext"><button class="small primary" onclick="goStep(4)">All checks reviewed: see the result →</button></div>`;
 }
 function stepFootHtml(){
   const n=ui.step; const prev=STEPS[n-2], next=STEPS[n];
-  return `<div class="stfoot noprint"><div>${prev?`<button onclick="goStep(${n-1})">← ${prev.l}</button>`:''}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${n===5?`<button class="primary" onclick="ui.view='report';render();window.scrollTo(0,0)">View report and download PDF</button>`:''}${next?`<button class="${n===5?'':'primary'}" onclick="goStep(${n+1})">${n===5?'Rent Roll':'Next: '+next.l} →</button>`:`<button class="primary" onclick="ui.view='report';render();window.scrollTo(0,0)">View report and download PDF</button>`}</div></div>`;
+  return `<div class="stfoot noprint"><div>${prev?`<button onclick="goStep(${n-1})">← ${prev.l}</button>`:''}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${n===4?`<button class="primary" onclick="ui.view='report';render();window.scrollTo(0,0)">View report and download PDF</button>`:''}${next?`<button class="primary" onclick="goStep(${n+1})">Next: ${next.l} →</button>`:''}</div></div>`;
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }
 function nowISO(){ return new Date().toISOString(); }
@@ -419,6 +417,13 @@ function loadOwnerProfile(id){
   data.owner={name:p.name||'',address:p.address||'',phone:p.phone||'',email:p.email||'',_id:p.id};
   save(); ui.ownerTab='edit'; renderList(); toast('Active: '+p.name);
 }
+function useOwnerForScreening(id){
+  const p=data.ownerProfiles.find(x=>x.id===id); if(!p) return;
+  data.owner={name:p.name||'',address:p.address||'',phone:p.phone||'',email:p.email||'',_id:p.id};
+  const s=cur(); if(s&&p.address&&!s.rental.property){ setPath(s,'rental.property',p.address); s.updatedAt=nowISO(); save(); }
+  else save();
+  render(); toast('Owner: '+p.name);
+}
 function deleteOwnerProfile(id){
   if(!confirm('Delete this owner profile?')) return;
   data.ownerProfiles=data.ownerProfiles.filter(p=>p.id!==id);
@@ -451,37 +456,38 @@ function inp(path,label,type,val,extra){ return `<div class="field"><label>${lab
 function renderMain(){
   const el=document.getElementById('main');
   if(ui.view==='home'||!cur()){
-    const showWelcome=!localStorage.getItem('lease:welcomeDismissed');
-    const welcomeHtml=showWelcome?`<div class="panel" id="welcome-panel" style="border-left:4px solid var(--gold);margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:12px">
-        <div>
-          <div class="sec-no" style="margin-bottom:4px">Welcome to LEASE</div>
-          <div style="font-family:'Source Serif 4',Georgia,serif;font-size:18px;font-weight:600">Built by an Ontario small landlord, for Ontario small landlords</div>
+    const ownerSet=!!(data.owner.name||data.owner.address);
+    el.innerHTML = `
+    <div class="panel" style="border-left:4px solid var(--gold);margin-bottom:16px">
+      <div style="font-family:'Source Serif 4',Georgia,serif;font-size:20px;font-weight:700;margin-bottom:8px">LEASE — Landlord Essentials</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:14px">Built by an Ontario small landlord, for Ontario small landlords. No account. No fees. Your data never leaves this browser.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
+        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:11px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">Screen</div>
+          <div style="font-weight:600;font-size:13px;margin-bottom:3px">Screen applicants</div>
+          <div style="font-size:12px;color:var(--muted)">Upload documents, auto-fill checks, get a PDF decision report.</div>
         </div>
-        <button class="small" onclick="localStorage.setItem('lease:welcomeDismissed','1');document.getElementById('welcome-panel').remove()" style="white-space:nowrap;flex-shrink:0;border-color:var(--line);color:var(--muted)">Dismiss</button>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px">
-        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:12px">
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">01 · Screen</div>
-          <div style="font-weight:600;margin-bottom:4px">Screen applicants</div>
-          <div style="font-size:13px;color:var(--muted)">PIPEDA-compliant criteria, income checks, document review, immutable decision log.</div>
+        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:11px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">Lease</div>
+          <div style="font-weight:600;font-size:13px;margin-bottom:3px">Generate the lease</div>
+          <div style="font-size:12px;color:var(--muted)">Ontario Standard Lease Form 2229E, pre-filled. Download as PDF.</div>
         </div>
-        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:12px">
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">02 · Lease</div>
-          <div style="font-weight:600;margin-bottom:4px">Generate the lease</div>
-          <div style="font-size:13px;color:var(--muted)">Ontario Standard Lease Form 2229E, pre-filled from your screening data. Download as PDF.</div>
-        </div>
-        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:12px">
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">03 · Notices</div>
-          <div style="font-weight:600;margin-bottom:4px">File LTB notices</div>
-          <div style="font-size:13px;color:var(--muted)">N4, N5, N7, N8, N12, N13 — wizard guides you to the right form with official Tribunals Ontario links.</div>
+        <div style="background:var(--raised);border:1px solid var(--line);border-radius:3px;padding:11px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">Notices</div>
+          <div style="font-weight:600;font-size:13px;margin-bottom:3px">File LTB notices</div>
+          <div style="font-size:12px;color:var(--muted)">N4, N5, N7, N8, N12, N13 — wizard with official Tribunals Ontario links.</div>
         </div>
       </div>
-      <div style="font-size:13px;color:var(--muted)">No account. No fees. Your data never leaves this browser. <strong style="color:var(--ink)">Completely free, always.</strong></div>
-    </div>`:'';
-    el.innerHTML = welcomeHtml+`<div class="panel">${privacyBannerHtml()}<h3>Screen a tenant, get a PDF report</h3>
-      <p class="hint">Add the applicant, lock your criteria, record each check (with the applicant's consent where needed), and download a report. Everything is stored only in this browser.</p>
-      <div class="actions"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="sampleScreening()">Try a sample applicant</button></div></div>`;
+    </div>
+    ${!ownerSet?`<div class="panel" style="border-left:4px solid var(--amber);margin-bottom:16px">
+      <div class="sec-no" style="margin-bottom:4px">Step 1 — Before you begin</div>
+      <div style="font-family:'Source Serif 4',Georgia,serif;font-size:16px;font-weight:600;margin-bottom:6px">Add your Owner Profile</div>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">Your Owner Profile stores your legal name, property address, phone and email. It pre-fills your lease and notices. <strong style="color:var(--ink)">Create one profile per rental unit</strong> — if you own multiple properties, each unit gets its own profile.</p>
+      <button class="primary" onclick="ui.ownerOpen=true;ui.ownerTab='edit';render();document.getElementById('list').scrollIntoView({behavior:'smooth'})">Add Owner Profile →</button>
+    </div>`:''}
+    <div class="panel">${privacyBannerHtml()}<h3>Start a new screening</h3>
+      <p class="hint">Add the applicant, upload their documents, lock your criteria, record each check, and download a PDF report.</p>
+      <div class="actions"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="sampleScreening()">Try a sample</button></div></div>`;
     return;
   }
   if(ui.view==='report'){ renderReport(el); return; }
@@ -495,30 +501,56 @@ function renderEditor(el){
   el.innerHTML = `
   <div class="stepper noprint"><div id="stepper">${stepperHtml(s)}</div></div>
 
-  <div class="stp ${stp(1)}" data-step="1"><div class="panel"><div class="sec-no">1 · Applicant and rental</div><h3>Who and what</h3>
-    <div class="row">${inp('applicant.name','Full name','text',s.applicant.name)}${inp('applicant.email','Email','email',s.applicant.email)}${inp('applicant.phone','Phone','tel',s.applicant.phone)}</div>
-    ${inp('applicant.address','Current address','text',s.applicant.address)}
-    <div class="row">${inp('rental.property','Rental property / unit','text',s.rental.property)}${inp('rental.rent','Asking monthly rent ($)','number',s.rental.rent,'min="0" step="0.01"')}${inp('rental.moveIn','Intended move-in','date',s.rental.moveIn)}</div>
-    <p class="hint">Do not record anything about protected grounds (age, family status, disability, source of income, etc.).</p></div></div>
+  <div class="stp ${stp(1)}" data-step="1"><div class="panel">
+    <div class="sec-no">1 · Setup</div><h3>Applicant, property &amp; criteria</h3>
 
-  <div class="stp ${stp(2)}" data-step="2"><div class="panel"><div class="sec-no">2 · Criteria</div><h3>Set before any check</h3>
-    <p class="hint">Written down and locked before checks begin, so every applicant is measured against the same standard. After locking they cannot be changed; start a duplicate screening for different criteria.</p>
-    ${locked?`<span class="stamp">LOCKED ${esc(fmtDT(s.criteria.lockedAt))}</span>
-      <p style="margin:10px 0 0">Minimum credit score: <b>${esc(s.criteria.minCredit)}</b> · References required: <b>${s.criteria.refRequired?'Yes':'No'}</b></p>${s.source?`<p class="hint">Locked in Rent Roll (criteria v${esc(s.source.criteriaVersion)}) before this applicant was invited. They cannot be changed here.</p>`:''}`:
-    `<div class="row">${inp('criteria.minCredit','Minimum credit score','number',s.criteria.minCredit,'id="criteria-min-credit" min="300" max="900"')}
-      <div class="field"><label>References required</label><select onchange="setv('criteria.refRequired',this.value==='yes')"><option value="yes" ${s.criteria.refRequired?'selected':''}>Yes</option><option value="no" ${!s.criteria.refRequired?'selected':''}>No</option></select></div></div>
-     <button class="primary" onclick="lockCriteria()">Lock criteria</button>`}
+    ${/* ── A: Applicant ─────────────────────────────── */``}
+    <div style="border-left:3px solid var(--gold);padding-left:12px;margin:14px 0 10px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">A · Applicant</div>
+      <div class="row">${inp('applicant.name','Full name','text',s.applicant.name)}${inp('applicant.email','Email','email',s.applicant.email)}${inp('applicant.phone','Phone','tel',s.applicant.phone)}</div>
+      <p class="hint" style="margin:4px 0 0">Do not record age, family status, disability, source of income, or other protected grounds.</p>
+    </div>
+
+    ${/* ── B: Rental Property & Owner ────────────────── */``}
+    <div style="border-left:3px solid var(--ink);padding-left:12px;margin:14px 0 10px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">B · Rental property &amp; owner</div>
+      ${(()=>{
+        const profs=data.ownerProfiles; const activeId=data.owner._id||null;
+        const pickerHtml=profs.length?`<div style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">SELECT OWNER PROFILE</div>
+          <div style="display:flex;flex-direction:column;gap:5px">${profs.map(p=>{
+            const isActive=activeId&&activeId===p.id;
+            return `<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid ${isActive?'var(--ink)':'var(--line)'};border-left:3px solid ${isActive?'var(--ink)':'var(--line)'};border-radius:3px;background:${isActive?'#fff':'var(--raised)'}">
+              <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">${esc(p.name||'(unnamed)')}${isActive?` <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green);font-weight:700">✓ Active</span>`:''}</div><div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.address||'—')}</div></div>
+              ${isActive?'':`<button class="small primary" onclick="useOwnerForScreening('${p.id}')">Use</button>`}
+            </div>`;
+          }).join('')}</div>
+        </div>`:`<p class="hint" style="margin:0 0 8px">No saved owner profiles. <button class="small" onclick="ui.ownerOpen=true;ui.ownerTab='saved';render()">Add a profile →</button></p>`;
+        return pickerHtml;
+      })()}
+      <div class="row">${inp('rental.property','Rental property / unit address','text',s.rental.property)}${inp('rental.rent','Asking monthly rent ($)','number',s.rental.rent,'min="0" step="0.01"')}${inp('rental.moveIn','Intended move-in','date',s.rental.moveIn)}</div>
+    </div>
+
+    ${/* ── C: Screening Criteria ─────────────────────── */``}
+    <div style="border-left:3px solid ${locked?'var(--green)':'var(--red)'};padding-left:12px;margin:14px 0 0">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">C · Screening criteria</div>
+      <p class="hint" style="margin:0 0 8px">Lock criteria before any check — every applicant is measured against the same standard. Once locked they cannot be changed.</p>
+      ${locked?`<span class="stamp">LOCKED ${esc(fmtDT(s.criteria.lockedAt))}</span>
+        <p style="margin:8px 0 0;font-size:14px">Min credit score: <b>${esc(s.criteria.minCredit)}</b> &nbsp;·&nbsp; References required: <b>${s.criteria.refRequired?'Yes':'No'}</b></p>`:
+      `<div class="row">${inp('criteria.minCredit','Minimum credit score','number',s.criteria.minCredit,'id="criteria-min-credit" min="300" max="900"')}
+        <div class="field"><label>References required</label><select onchange="setv('criteria.refRequired',this.value==='yes')"><option value="yes" ${s.criteria.refRequired?'selected':''}>Yes</option><option value="no" ${!s.criteria.refRequired?'selected':''}>No</option></select></div></div>
+       <button class="primary" onclick="lockCriteria()">Lock criteria &amp; start screening</button>`}
+    </div>
   </div></div>
 
-  ${stepWrap(3,docsPanelHtml(s))}
-  <div class="stp ${stp(4)}" data-step="4"><div class="panel"><div class="sec-no">4 · Checks</div><h3>Checks, one at a time</h3>
-    <p class="hint">${locked?'Record each check. Tick the consent first where one is needed.':'Lock the criteria above to unlock the checks.'}</p>
-    ${locked?'':`<div class="note">Criteria are not locked yet. <button class="small" onclick="goStep(2)">Go to Criteria</button></div>`}
+  ${stepWrap(2,docsPanelHtml(s))}
+  <div class="stp ${stp(3)}" data-step="3"><div class="panel"><div class="sec-no">3 · Checks</div><h3>Checks, one at a time</h3>
+    <p class="hint">${locked?'Record each check. Tick the consent first where one is needed.':'Lock the criteria in Setup to unlock the checks.'}</p>
+    ${locked?'':`<div class="note">Criteria are not locked yet. <button class="small" onclick="goStep(1)">Go to Setup</button></div>`}
     ${dimNavHtml(s)}
     <fieldset ${locked?'':'disabled'}>${dimCardsHtml(s)}</fieldset>${dimNextHtml(s)}</div></div>
 
-  <div class="stp ${stp(5)}" data-step="5"><div class="panel"><div class="sec-no">5 · Result</div><h3>Outcome</h3><div id="outcome"></div></div></div>
-  ${stepWrap(6,rrPanelHtml(s))}
+  <div class="stp ${stp(4)}" data-step="4"><div class="panel"><div class="sec-no">4 · Result</div><h3>Outcome</h3><div id="outcome"></div></div></div>
   ${stepFootHtml()}
   <div class="actions noprint" style="justify-content:flex-end;opacity:.85"><button class="small" onclick="duplicateScreening()">Duplicate details into new screening</button>
     <button class="small danger" onclick="removeScreening('${s.id}')">${ui.confirmDelete===s.id?'Click again to delete':'Delete'}</button></div>`;
@@ -1107,9 +1139,7 @@ function downloadPdf(){
    Only the extracted fields are kept, never the image or the full text. */
 const DOC_TYPES={id:'Photo ID',paystub:'Paystub',noa:'CRA Notice of Assessment',t4:'T4 slip',letter:'Employment letter',credit:'Credit report',bank:'Bank statement',lease:'Previous lease',osb:'OSB insolvency search result',police:'Police record check (applicant-supplied)',court:'Court records search result',other:'Unrecognized document'};
 const DOC_MEM={}; const DOC_ST={busy:false,applied:[]};
-const OCR_URL='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-const OCR_LANG='https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int';
-const OCR_LANG_FRA='https://cdn.jsdelivr.net/npm/@tesseract.js-data/fra/4.0.0_best_int';
+const PADDLE_OCR_URL='https://cdn.jsdelivr.net/npm/@paddlejs-models/ocr/dist/ocr.js';
 
 /* ---------- text helpers ---------- */
 const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
@@ -1370,8 +1400,10 @@ function loadScript(src){ return new Promise((res,rej)=>{ const e=document.creat
 let _ocr=null;
 async function ensureOcr(){
   if(_ocr) return _ocr;
-  if(!window.Tesseract) await loadScript(window.__OCR_URL||OCR_URL);
-  _ocr=await window.Tesseract.createWorker(['eng','fra'],1,Object.assign({langPath:OCR_LANG,logger:m=>{ if(m.status&&m.progress!=null) setBusy('Reading text from image... '+Math.round(m.progress*100)+'%'); }},window.__OCR_OPTS||{}));
+  if(!window.ocr) { setBusy('Loading OCR engine...'); await loadScript(window.__OCR_URL||PADDLE_OCR_URL); }
+  setBusy('Initializing OCR engine...');
+  await window.ocr.init();
+  _ocr=window.ocr;
   return _ocr;
 }
 /* Photos from phones are often huge, rotated by EXIF, or low contrast. Normalize before OCR: apply the EXIF rotation,
@@ -1388,7 +1420,17 @@ async function prepImage(blob){
     cx.putImageData(im,0,0); const out=await new Promise(r=>cv.toBlob(r,'image/png')); return out||blob;
   }catch(e){ return blob; }
 }
-async function ocrBlob(blob){ const w=await ensureOcr(); const r=await w.recognize(blob); return {text:r.data.text||'',conf:Math.round(r.data.confidence||0)}; }
+async function ocrBlob(blob){
+  const engine=await ensureOcr();
+  const img=new Image(); const url=URL.createObjectURL(blob);
+  await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src=url; });
+  URL.revokeObjectURL(url);
+  const cv=document.createElement('canvas'); cv.width=img.naturalWidth; cv.height=img.naturalHeight;
+  cv.getContext('2d').drawImage(img,0,0);
+  const results=await engine.recognize(cv);
+  const text=Array.isArray(results)?results.map(r=>r.text||'').join('\n'):(results&&results.text?results.text:'');
+  return {text,conf:82};
+}
 function setBusy(msg){ const e=document.getElementById('docBusy'); if(e) e.textContent=msg; }
 function pdfFlags(bytes,meta,hasText){
   const f=[]; const str=new TextDecoder('latin1').decode(bytes); const eof=(str.match(/%%EOF/g)||[]).length; const lin=/\/Linearized/.test(str); const updates=Math.max(0,eof-1-(lin?1:0));
@@ -1429,19 +1471,21 @@ async function readOne(s,file){
     auth={tier:'unassessable',flags:[{level:'info',title:'Plain text or CSV: no file history to check'}],producer:''};
   }
   const text=lines.join('\n'); const id=uid();
-  const type=classifyDoc(text,file.name,lines);
+  const typeAuto=classifyDoc(text,file.name,lines);
+  const type=(window._docHint&&typeAuto==='other')?window._docHint:typeAuto;
   const ex=extractDoc(type,lines,file.name,csvRows);
-  const d={id,fileName:file.name,size:file.size,sha256:sha,type,typeAuto:type,method,conf,readAt:nowISO(),f:ex.f,notes:ex.notes,guess:ex.guess||{},over:{},auth,nameHit:null};
+  const d={id,fileName:file.name,size:file.size,sha256:sha,type,typeAuto,method,conf,readAt:nowISO(),f:ex.f,notes:ex.notes,guess:ex.guess||{},over:{},auth,nameHit:null};
   (s.docs||(s.docs=[])).push(d); DOC_MEM[id]={text,lines,csvRows,file};
   if(type==='id'&&!s.applicant.name&&ex.f.name) s.applicant.name=ex.f.name;
   refreshNameHits(s);
   if(method==='ocr'&&conf!=null&&conf<LOW_CONF) toast('Low OCR confidence ('+conf+'%) on '+file.name+' — check the values and correct any errors.');
 }
 function refreshNameHits(s){ (s.docs||[]).forEach(d=>{ const m=DOC_MEM[d.id]; if(m&&m.csvRows){ d.nameHit=null; return; } if(m&&s.applicant.name) d.nameHit=nameInText(s.applicant.name,m.text); }); }
-async function readDocFiles(files){
+async function readDocFiles(files,hintType){
   const s=cur(); if(!s||!files||!files.length) return; DOC_ST.busy=true; render();
+  window._docHint=hintType||null;
   for(const file of Array.from(files)){ try{ setBusy('Reading '+file.name+'...'); await readOne(s,file); }catch(e){ console.error(e); toast('Could not read '+file.name+(/Could not load/.test(e.message)?' (text reader unavailable offline)':'')); } }
-  DOC_ST.busy=false; s.updatedAt=nowISO(); save(); render();
+  window._docHint=null; DOC_ST.busy=false; s.updatedAt=nowISO(); save(); render();
 }
 function onDocDrop(ev){ ev.preventDefault(); readDocFiles(ev.dataTransfer.files); }
 function removeDoc(id){ const s=cur(); if(!s) return; s.docs=(s.docs||[]).filter(d=>d.id!==id); delete DOC_MEM[id]; s.updatedAt=nowISO(); save(); render(); }
@@ -1789,22 +1833,21 @@ function docChecklistHtml(s){
     const m={id:()=>f.expiry?'expires '+f.expiry:'', paystub:()=>{ const ds=D.map(d=>d.f.payDate).filter(Boolean).sort(); return ds.length?'latest '+ds[ds.length-1]:''; }, credit:()=>(f.score!=null?'score '+f.score:'')+(f.reportDate?' · '+f.reportDate:''), bank:()=>f.periodStart?f.periodStart+' to '+f.periodEnd:'', letter:()=>f.employer||'', lease:()=>f.end?'ends '+f.end:'', noa:()=>f.year?'tax year '+f.year:'', t4:()=>f.year?'tax year '+f.year:'', osb:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:''), court:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:''), police:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:'')};
     const x=(m[r.type]||(()=>''))(); return n+(x||'added'); };
   const row=r=>{ const ok=r.have||r.altHave; const dot=`<span style="display:inline-flex;flex:none;width:18px;height:18px;border-radius:50%;border:2px solid ${ok?(r.low?'var(--amber)':'var(--green)'):'var(--line)'};background:${ok?(r.low?'var(--amber)':'var(--green)'):'#fff'};color:#fff;font-size:11px;font-weight:700;align-items:center;justify-content:center">${ok?(r.low?'!':'✓'):''}</span>`;
-    return `<li style="display:flex;gap:8px;align-items:center;padding:4px 0">${dot}<span style="${ok?'':'font-weight:600'}">${esc(short[r.type]||r.name)}</span><span class="hint" style="margin:0 0 0 auto;white-space:nowrap">${ok?(r.low?'check it · ':'')+esc(detail(r)):esc(r.feeds.map(k=>DIM_NAME[k]).join(', '))}</span></li>`; };
+    const uploadBtn=`<label style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;font-size:12px;font-weight:600;border:1px solid var(--ink);border-radius:3px;cursor:pointer;background:${ok?'transparent':'var(--ink)'};color:${ok?'var(--ink)':'#F8F5EF'};white-space:nowrap;flex-shrink:0">${ok?'Replace':'Upload'}<input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,application/pdf,image/*" style="display:none" onchange="readDocFiles(this.files,'${r.type}');this.value=''"></label>`;
+    return `<li style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)">${dot}<span style="${ok?'':'font-weight:600'};flex:1;min-width:0">${esc(short[r.type]||r.name)}</span><span class="hint" style="margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">${ok?(r.low?'check it · ':'')+esc(detail(r)):esc(r.feeds.map(k=>DIM_NAME[k]).join(', '))}</span>${uploadBtn}</li>`; };
   return `<div class="doclist" style="margin:10px 0 14px;border:1px solid var(--line);border-radius:4px;background:#fff;padding:10px 12px">
-    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Must haves</b><span class="badge" style="margin:0">${haveN} of ${need.length} added</span></div>
-    <ul style="list-style:none;margin:6px 0 0;padding:0">${need.map(row).join('')}</ul>
-    <details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px;color:var(--muted)">Also helpful (${more.length})</summary><ul style="list-style:none;margin:4px 0 0;padding:0">${more.map(row).join('')}</ul></details></div>`;
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px"><b>Must-have documents</b><span class="badge" style="margin:0">${haveN} of ${need.length} added</span></div>
+    <ul style="list-style:none;margin:0;padding:0">${need.map(row).join('')}</ul>
+    <details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:var(--muted)">Also helpful (${more.length})</summary><ul style="list-style:none;margin:4px 0 0;padding:0">${more.map(r=>{ const ok=r.have||r.altHave; const dot=`<span style="display:inline-flex;flex:none;width:14px;height:14px;border-radius:50%;border:2px solid ${ok?'var(--green)':'var(--line)'};background:${ok?'var(--green)':'#fff'};color:#fff;font-size:9px;font-weight:700;align-items:center;justify-content:center">${ok?'✓':''}</span>`; return `<li style="display:flex;gap:8px;align-items:center;padding:4px 0">${dot}<span style="flex:1">${esc(short[r.type]||r.name)}</span><span class="hint" style="margin:0">${ok?esc(detail(r)):esc(r.feeds.map(k=>DIM_NAME[k]).join(', '))}</span></li>`; }).join('')}</ul></details></div>`;
 }
 function docsPanelHtml(s){
   const D=s.docs||[]; const checks=docChecks(s).filter(c=>!c.ids.length||true); const est=incomeEstimate(s); const conf=s.docConfirm||{};
   const needs=Object.keys(DIM_DOCS).filter(k=>dimBlocked(s,k));
   return `<div class="panel"><div class="sec-no">3 · Documents</div><h3>Read documents automatically</h3>
     ${privacyBannerHtml()}
-    <p class="hint">Drop in whatever the applicant gave you. The app reads each file on this device and fills in the checks for you to confirm.</p>
+    <p class="hint">Upload each document using the button on its row. Photos and scanned PDFs are read with OCR in-browser — nothing leaves your device.</p>
     ${docChecklistHtml(s)}
-    <label class="dropzone" ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="display:block;border:2px dashed var(--line);border-radius:4px;padding:18px;text-align:center;cursor:pointer;background:#fff">
-      <b>Drop files here or click to choose</b><div class="hint" style="margin:4px 0 0">PDF, JPG/JPEG, PNG, or CSV. Photos and scanned PDFs are read with OCR (English &amp; French). Large scans may take 10–20 seconds.</div>
-      <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.csv,.tsv,.txt,application/pdf,image/*,text/csv" style="display:none" onchange="readDocFiles(this.files);this.value=''"></label>
+    <div ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="border:1px dashed var(--line);border-radius:4px;padding:10px 14px;font-size:13px;color:var(--muted);text-align:center;margin-top:4px">Or drag &amp; drop any file here</div>
     <div id="docBusy" class="hint" style="min-height:18px">${DOC_ST.busy?'Reading...':''}</div>
     ${needs.length?`<div class="note" style="border-left:4px solid var(--red)"><b>Manual verification needed:</b> ${needs.map(k=>DIM_NAME[k]).join(', ')}. Confidence is under ${LOW_CONF}% for at least one document. Verify or override in the section itself (4 · Checks).</div>`:''}
     ${D.map(d=>docCardHtml(s,d)).join('')}
@@ -2104,7 +2147,7 @@ function renderAgreement(el){
   const lastGen=ag.generatedAt?`<span style="font-size:12px;color:var(--muted);margin-left:12px">Last generated ${esc(fmtDT(ag.generatedAt))}</span>`:'';
   el.innerHTML=`
   <div class="actions noprint" style="align-items:center;flex-wrap:wrap;gap:8px">
-    <button onclick="ui.view='edit';goStep(5);render()">← Back to result</button>
+    <button onclick="ui.view='edit';goStep(4);render()">← Back to result</button>
     <button class="primary" onclick="downloadLeasePdf()" title="Generate PDF from current form data">${ag.generatedAt?'Re-generate PDF':'Generate PDF'} (Form 2229E)</button>
     ${ag.generatedAt?`<button onclick="window.print()">Print</button>`:''}
     ${lastGen}
