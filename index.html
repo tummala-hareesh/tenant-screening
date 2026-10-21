@@ -1109,6 +1109,7 @@ const DOC_TYPES={id:'Photo ID',paystub:'Paystub',noa:'CRA Notice of Assessment',
 const DOC_MEM={}; const DOC_ST={busy:false,applied:[]};
 const OCR_URL='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 const OCR_LANG='https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0_best_int';
+const OCR_LANG_FRA='https://cdn.jsdelivr.net/npm/@tesseract.js-data/fra/4.0.0_best_int';
 
 /* ---------- text helpers ---------- */
 const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
@@ -1370,7 +1371,7 @@ let _ocr=null;
 async function ensureOcr(){
   if(_ocr) return _ocr;
   if(!window.Tesseract) await loadScript(window.__OCR_URL||OCR_URL);
-  _ocr=await window.Tesseract.createWorker('eng',1,Object.assign({langPath:OCR_LANG,logger:m=>{ if(m.status&&m.progress!=null) setBusy('Reading text from image... '+Math.round(m.progress*100)+'%'); }},window.__OCR_OPTS||{}));
+  _ocr=await window.Tesseract.createWorker(['eng','fra'],1,Object.assign({langPath:OCR_LANG,logger:m=>{ if(m.status&&m.progress!=null) setBusy('Reading text from image... '+Math.round(m.progress*100)+'%'); }},window.__OCR_OPTS||{}));
   return _ocr;
 }
 /* Photos from phones are often huge, rotated by EXIF, or low contrast. Normalize before OCR: apply the EXIF rotation,
@@ -1414,7 +1415,7 @@ async function readOne(s,file){
     lines=[].concat.apply([],per); const hasText=lines.join('').replace(/\s/g,'').length>=40;
     if(!hasText){
       method='ocr'; lines=[]; const confs=[];
-      for(let p=1;p<=Math.min(doc.numPages,3);p++){ setBusy('Rendering page '+p+' for OCR...'); const page=await doc.getPage(p); const vp=page.getViewport({scale:2}); const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+      for(let p=1;p<=Math.min(doc.numPages,6);p++){ setBusy('Rendering page '+p+' for OCR...'); const page=await doc.getPage(p); const vp=page.getViewport({scale:2}); const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
         await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise; const blob=await new Promise(r=>cv.toBlob(r,'image/png')); const o=await ocrBlob(blob); lines=lines.concat(o.text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)); confs.push(o.conf); }
       conf=confs.length?Math.round(confs.reduce((a,b)=>a+b,0)/confs.length):null;
     }
@@ -1434,6 +1435,7 @@ async function readOne(s,file){
   (s.docs||(s.docs=[])).push(d); DOC_MEM[id]={text,lines,csvRows,file};
   if(type==='id'&&!s.applicant.name&&ex.f.name) s.applicant.name=ex.f.name;
   refreshNameHits(s);
+  if(method==='ocr'&&conf!=null&&conf<LOW_CONF) toast('Low OCR confidence ('+conf+'%) on '+file.name+' — check the values and correct any errors.');
 }
 function refreshNameHits(s){ (s.docs||[]).forEach(d=>{ const m=DOC_MEM[d.id]; if(m&&m.csvRows){ d.nameHit=null; return; } if(m&&s.applicant.name) d.nameHit=nameInText(s.applicant.name,m.text); }); }
 async function readDocFiles(files){
@@ -1801,7 +1803,7 @@ function docsPanelHtml(s){
     <p class="hint">Drop in whatever the applicant gave you. The app reads each file on this device and fills in the checks for you to confirm.</p>
     ${docChecklistHtml(s)}
     <label class="dropzone" ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="display:block;border:2px dashed var(--line);border-radius:4px;padding:18px;text-align:center;cursor:pointer;background:#fff">
-      <b>Drop files here or click to choose</b><div class="hint" style="margin:4px 0 0">PDF, photo (JPG/PNG) or CSV. Photos and scans are read with OCR, which can take a few seconds.</div>
+      <b>Drop files here or click to choose</b><div class="hint" style="margin:4px 0 0">PDF, JPG/JPEG, PNG, or CSV. Photos and scanned PDFs are read with OCR (English &amp; French). Large scans may take 10–20 seconds.</div>
       <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.csv,.tsv,.txt,application/pdf,image/*,text/csv" style="display:none" onchange="readDocFiles(this.files);this.value=''"></label>
     <div id="docBusy" class="hint" style="min-height:18px">${DOC_ST.busy?'Reading...':''}</div>
     ${needs.length?`<div class="note" style="border-left:4px solid var(--red)"><b>Manual verification needed:</b> ${needs.map(k=>DIM_NAME[k]).join(', ')}. Confidence is under ${LOW_CONF}% for at least one document. Verify or override in the section itself (4 · Checks).</div>`:''}
