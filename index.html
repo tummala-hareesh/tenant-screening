@@ -244,7 +244,7 @@ function setvR(path,val){
 function toggleConsent(type,on){ const s=cur(); s.consents[type]= on?{given:true,at:nowISO()}:{given:false,at:null}; s.updatedAt=nowISO(); save(); render(); }
 function lockCriteria(){
   const s=cur(); const mc=parseInt(s.criteria.minCredit,10);
-  if(!(mc>=300 && mc<=900)){ toast('Enter a minimum credit score between 300 and 900'); return; }
+  if(!(mc>=300 && mc<=900)){ toast('Enter a minimum credit score between 300 and 900'); setTimeout(()=>{const f=document.getElementById('criteria-min-credit');if(f){f.style.borderColor='var(--red)';f.style.boxShadow='0 0 0 2px rgba(154,51,36,.2)';f.focus();setTimeout(()=>{f.style.borderColor='';f.style.boxShadow='';},2500);}},0); return; }
   if(!s.applicant.name.trim()){ toast('Enter the applicant name first'); return; }
   s.criteria.minCredit=mc; s.criteria.lockedAt=nowISO(); s.updatedAt=nowISO(); save(); render(); toast('Criteria locked');
 }
@@ -505,7 +505,7 @@ function renderEditor(el){
     <p class="hint">Written down and locked before checks begin, so every applicant is measured against the same standard. After locking they cannot be changed; start a duplicate screening for different criteria.</p>
     ${locked?`<span class="stamp">LOCKED ${esc(fmtDT(s.criteria.lockedAt))}</span>
       <p style="margin:10px 0 0">Minimum credit score: <b>${esc(s.criteria.minCredit)}</b> · References required: <b>${s.criteria.refRequired?'Yes':'No'}</b></p>${s.source?`<p class="hint">Locked in Rent Roll (criteria v${esc(s.source.criteriaVersion)}) before this applicant was invited. They cannot be changed here.</p>`:''}`:
-    `<div class="row">${inp('criteria.minCredit','Minimum credit score','number',s.criteria.minCredit,'min="300" max="900"')}
+    `<div class="row">${inp('criteria.minCredit','Minimum credit score','number',s.criteria.minCredit,'id="criteria-min-credit" min="300" max="900"')}
       <div class="field"><label>References required</label><select onchange="setv('criteria.refRequired',this.value==='yes')"><option value="yes" ${s.criteria.refRequired?'selected':''}>Yes</option><option value="no" ${!s.criteria.refRequired?'selected':''}>No</option></select></div></div>
      <button class="primary" onclick="lockCriteria()">Lock criteria</button>`}
   </div></div>
