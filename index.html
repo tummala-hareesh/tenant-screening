@@ -2063,8 +2063,14 @@ function renderAgreement(el){
   const ownerMissing=!(o.name&&o.address);
   const chk=(k,lbl)=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin:4px 0"><input type="checkbox" ${ag[k]?'checked':''} onchange="setAgreement('${k}',this.checked)" style="width:auto"> ${lbl}</label>`;
   const sel=(k,opts)=>`<select onchange="setAgreement('${k}',this.value)">${opts.map(([v,t])=>`<option value="${v}" ${String(ag[k])===String(v)?'selected':''}>${t}</option>`).join('')}</select>`;
+  const lastGen=ag.generatedAt?`<span style="font-size:12px;color:var(--muted);margin-left:12px">Last generated ${esc(fmtDT(ag.generatedAt))}</span>`:'';
   el.innerHTML=`
-  <div class="actions noprint"><button onclick="ui.view='edit';goStep(5);render()">← Back to result</button><button class="primary" onclick="downloadLeasePdf()">Download PDF (Form 2229E)</button></div>
+  <div class="actions noprint" style="align-items:center;flex-wrap:wrap;gap:8px">
+    <button onclick="ui.view='edit';goStep(5);render()">← Back to result</button>
+    <button class="primary" onclick="downloadLeasePdf()" title="Generate PDF from current form data">${ag.generatedAt?'Re-generate PDF':'Generate PDF'} (Form 2229E)</button>
+    ${ag.generatedAt?`<button onclick="window.print()">Print</button>`:''}
+    ${lastGen}
+  </div>
   <div class="panel">
     <div class="sec-no">Ontario Standard Lease · Form 2229E (December 2020) · O. Reg. 9/18</div>
     <h2 style="font-size:22px;margin:2px 0 6px">Residential Tenancy Agreement</h2>
@@ -2222,7 +2228,11 @@ function renderAgreement(el){
     </div>
 
     <div class="note" style="margin-top:24px">This tool generates a draft based on Form 2229E (Ontario Standard Lease, December 2020, O. Reg. 9/18 under the <i>Residential Tenancies Act, 2006</i>). It does not constitute legal advice. Both parties must sign and each must receive a copy. Official blank form: <a href="https://forms.mgcs.gov.on.ca/en/dataset/047-2229" target="_blank" rel="noopener noreferrer">forms.mgcs.gov.on.ca/en/dataset/047-2229</a></div>
-    <div class="actions noprint" style="margin-top:16px"><button class="primary" onclick="downloadLeasePdf()">Download PDF (Form 2229E)</button><button onclick="window.print()">Print</button></div>
+    <div class="actions noprint" style="margin-top:16px;align-items:center;flex-wrap:wrap;gap:8px">
+      <button class="primary" onclick="downloadLeasePdf()">${ag.generatedAt?'Re-generate PDF':'Generate PDF'} (Form 2229E)</button>
+      ${ag.generatedAt?`<button onclick="window.print()">Print</button>`:''}
+      ${ag.generatedAt?`<span style="font-size:12px;color:var(--muted)">Last generated ${esc(fmtDT(ag.generatedAt))}</span>`:''}
+    </div>
   </div>`;
   refreshAgreementLive();
 }
@@ -2232,316 +2242,355 @@ function buildLeasePdf(){
   const ag=s.agreement||{}; const o=data.owner; const a=s.applicant; const r=s.rental;
   const J=window.jspdf&&window.jspdf.jsPDF; if(!J) return null;
   const doc=new J({unit:'pt',format:'letter'});
-  const W=612,H=792,ML=36,MR=36,MT=36,CW=W-ML-MR; let y=MT;
 
-  // Palette matching Ontario government form aesthetic
-  const NAVY=[0,51,102], BLUE=[0,84,166], LTBLUE=[220,234,248], GRAY=[100,100,100],
-        LGRAY=[235,235,235], FGRAY=[247,247,247], BLACK=[30,30,30], WHITE=[255,255,255],
-        BORDER=[170,170,170], GREEN=[0,130,60];
+  // Page geometry
+  const W=612, H=792, ML=40, MR=40, MT=20, MB=30, CW=W-ML-MR;
+  // Spacing constants
+  const FBP=4;    // inner horizontal padding inside a form box
+  const FBT=8;    // top padding — label baseline
+  const FBV=20;   // value baseline offset from box top (first line)
+  const FBLH=11;  // value line-height
+  const FBB=6;    // bottom padding inside box (clearance below last line)
+  const FBG=8;    // gap below a form-box row
+  const CBH=16;   // checkbox row height (single line)
+  const SHH=18;   // section header bar height
+  const SHG=10;   // gap below section header before content
+  const NLH=10;   // note line-height
+  const NG=4;     // extra gap after a note block
+  let y=MT;
 
-  const need=h=>{ if(y+h>H-52){ doc.addPage(); y=MT; } };
+  // Palette
+  const NAVY=[0,51,102], BLUE=[0,84,166], LTBLUE=[220,234,248],
+        GRAY=[110,110,110], FGRAY=[248,248,248], BLACK=[25,25,25],
+        WHITE=[255,255,255], BORDER=[185,185,185], DBORDER=[140,140,140];
 
-  // --- drawing helpers ---
-  function setFont(f,style,sz,col){
-    doc.setFont(f||'helvetica',style||'normal'); doc.setFontSize(sz||10);
-    if(col) doc.setTextColor.apply(doc,col); else doc.setTextColor.apply(doc,BLACK);
-  }
-  function fillRect(x,fx,fy,fw,fh,col){ doc.setFillColor.apply(doc,col); doc.rect(fx,fy,fw,fh,'F'); }
-  function strokeRect(fx,fy,fw,fh,col,lw){
-    doc.setDrawColor.apply(doc,col||BORDER); doc.setLineWidth(lw||0.4); doc.rect(fx,fy,fw,fh,'S');
-  }
+  // Page-break guard — always call BEFORE drawing a block of height h
+  const need=h=>{ if(y+h>H-MB-8){ doc.addPage(); y=MT; } };
 
-  // Draw a labelled form field box, returns height used
-  function formBox(lbl,val,bx,by,bw,bh){
-    doc.setFillColor.apply(doc,FGRAY); doc.rect(bx,by,bw,bh,'F');
-    doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5); doc.rect(bx,by,bw,bh,'S');
-    setFont('helvetica','normal',7,GRAY); doc.text(pdfClean(lbl),bx+3,by+8);
-    setFont('helvetica','normal',9.5,BLACK);
-    const lines=doc.splitTextToSize(pdfClean(val||''),bw-6);
-    lines.slice(0,Math.floor((bh-12)/11)).forEach((l,i)=>doc.text(l,bx+3,by+19+i*11));
-  }
-
-  // Checkbox: draws box + X or check if ticked
-  function checkbox(cx,cy,ticked,lbl){
-    doc.setFillColor.apply(doc,WHITE); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5);
-    doc.rect(cx,cy-7,8,8,'FD');
-    if(ticked){ doc.setDrawColor.apply(doc,NAVY); doc.setLineWidth(1.2);
-      doc.line(cx+1,cy-3,cx+3,cy-1); doc.line(cx+3,cy-1,cx+7,cy-7); }
-    setFont('helvetica','normal',9,BLACK); doc.text(pdfClean(lbl),cx+11,cy);
+  function sf(f,st,sz,col){
+    doc.setFont(f||'helvetica',st||'normal'); doc.setFontSize(sz||10);
+    doc.setTextColor.apply(doc,col||BLACK);
   }
 
-  // Section header bar with number badge
-  function sectionHeader(num,title){
-    need(30); y+=8;
-    doc.setFillColor.apply(doc,NAVY); doc.rect(ML,y,CW,16,'F');
-    // number badge
-    doc.setFillColor.apply(doc,BLUE); doc.rect(ML,y,20,16,'F');
-    setFont('helvetica','bold',9,WHITE); doc.text(String(num),ML+10,y+11,{align:'center'});
-    setFont('helvetica','bold',9,WHITE); doc.text(pdfClean(title),ML+26,y+11);
-    y+=22;
+  // Compute how tall a form-box needs to be given its label+value content.
+  // Returns height (never less than minH).
+  function fbHeight(lbl,val,bw,minH){
+    minH=minH||26;
+    // label is always 1 line (6.5pt, fits in FBT)
+    const vLines=doc.splitTextToSize(pdfClean(val||''),bw-FBP*2).length;
+    return Math.max(minH, FBV + (vLines-1)*FBLH + FBB);
   }
 
-  // Statutory note text (gray italic)
-  function note(str){
-    const lines=doc.splitTextToSize(pdfClean(str),CW);
-    setFont('helvetica','italic',7.5,GRAY);
-    lines.forEach(l=>{ need(10); doc.text(l,ML,y); y+=10; });
-    y+=2;
+  // Draw a labelled form-field box. Height auto-computed unless bh is given.
+  // Always advances y to by+bh+FBG after drawing (caller sets y=by first via need).
+  function fb(lbl,val,bx,by,bw,bh){
+    if(!bh) bh=fbHeight(lbl,val,bw);
+    doc.setFillColor.apply(doc,FGRAY); doc.setDrawColor.apply(doc,BORDER);
+    doc.setLineWidth(0.4); doc.rect(bx,by,bw,bh,'FD');
+    sf('helvetica','normal',6.5,GRAY);
+    doc.text(pdfClean(lbl),bx+FBP,by+FBT);
+    sf('helvetica','normal',9.5,BLACK);
+    doc.splitTextToSize(pdfClean(val||''),bw-FBP*2).forEach((l,i)=>doc.text(l,bx+FBP,by+FBV+i*FBLH));
+    y=by+bh+FBG;
   }
 
-  // ====================== COVER PAGE ======================
-  // Ontario wordmark bar
-  doc.setFillColor.apply(doc,NAVY); doc.rect(0,0,W,8,'F');
-  doc.setFillColor.apply(doc,BLUE); doc.rect(0,8,W,3,'F');
+  // Row of N equally-spaced boxes. All boxes in the row share the same height
+  // (the tallest computed height among them) so they align perfectly.
+  function fbRow(cols,_by,minH){
+    const gap=5; const n=cols.length; const bw=(CW-(n-1)*gap)/n;
+    const rowH=cols.reduce((m,[lbl,val])=>Math.max(m,fbHeight(lbl,val,bw,minH||26)),26);
+    need(rowH+FBG);
+    const ry=y; // use y AFTER need() in case a page break reset it
+    cols.forEach(([lbl,val],i)=>{
+      const bx=ML+i*(bw+gap);
+      doc.setFillColor.apply(doc,FGRAY); doc.setDrawColor.apply(doc,BORDER);
+      doc.setLineWidth(0.4); doc.rect(bx,ry,bw,rowH,'FD');
+      sf('helvetica','normal',6.5,GRAY); doc.text(pdfClean(lbl),bx+FBP,ry+FBT);
+      sf('helvetica','normal',9.5,BLACK);
+      doc.splitTextToSize(pdfClean(val||''),bw-FBP*2).forEach((l,j)=>doc.text(l,bx+FBP,ry+FBV+j*FBLH));
+    });
+    y=ry+rowH+FBG;
+  }
+
+  // Checkbox row. Handles label text that wraps (cy is the first-line baseline).
+  // Returns total height consumed so caller can accumulate y.
+  function chk(cx,_cy,ticked,lbl){
+    const lblLines=doc.splitTextToSize(pdfClean(lbl),CW-16);
+    need(lblLines.length*CBH+2);
+    const cy=y; // use y AFTER need() in case a page break reset it
+    doc.setFillColor.apply(doc,WHITE); doc.setDrawColor.apply(doc,DBORDER);
+    doc.setLineWidth(0.5); doc.rect(cx,cy-8,9,9,'FD');
+    if(ticked){ doc.setDrawColor.apply(doc,NAVY); doc.setLineWidth(1.5);
+      doc.line(cx+1.5,cy-3.5,cx+3.5,cy-1.5); doc.line(cx+3.5,cy-1.5,cx+8,cy-7.5); }
+    sf('helvetica','normal',9,BLACK);
+    lblLines.forEach((l,i)=>doc.text(l,cx+13,cy+i*CBH));
+    return lblLines.length*CBH;
+  }
+
+  // Section header — navy bar, blue number badge, white title
+  function sh(num,title){
+    need(SHH+SHG+30); y+=8;
+    doc.setFillColor.apply(doc,NAVY); doc.rect(ML,y,CW,SHH,'F');
+    doc.setFillColor.apply(doc,BLUE); doc.rect(ML,y,22,SHH,'F');
+    sf('helvetica','bold',9,WHITE); doc.text(String(num),ML+11,y+SHH-4,{align:'center'});
+    sf('helvetica','bold',8.5,WHITE); doc.text(pdfClean(title),ML+28,y+SHH-4);
+    y+=SHH+SHG;
+  }
+
+  // Statutory note — gray italic, wraps to available width, page-safe
+  function note(str,indent){
+    const x=ML+(indent||0); const w=CW-(indent||0);
+    sf('helvetica','italic',7.5,GRAY);
+    doc.splitTextToSize(pdfClean(str),w).forEach(l=>{ need(NLH+2); doc.text(l,x,y); y+=NLH; });
+    y+=NG;
+  }
+
+  // ── COVER HEADER ──────────────────────────────────────────────
+  doc.setFillColor.apply(doc,NAVY);  doc.rect(0,0,W,10,'F');
+  doc.setFillColor.apply(doc,BLUE);  doc.rect(0,10,W,3,'F');
+  y=22;
 
   // Title block
-  y=30;
-  doc.setFillColor.apply(doc,LTBLUE); doc.rect(ML,y,CW,80,'F');
-  doc.setDrawColor.apply(doc,NAVY); doc.setLineWidth(1); doc.rect(ML,y,CW,80,'S');
-  // Left: form ID
-  setFont('helvetica','bold',8,NAVY); doc.text('ONTARIO',ML+8,y+14);
-  setFont('helvetica','normal',7,GRAY); doc.text('Government of Ontario',ML+8,y+22);
-  doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.3); doc.line(ML+80,y+6,ML+80,y+74);
-  // Centre: title
-  setFont('helvetica','bold',16,NAVY); doc.text('Standard Form of Lease',W/2,y+26,{align:'center'});
-  setFont('helvetica','normal',10,BLACK); doc.text('(Residential Tenancy Agreement)',W/2,y+40,{align:'center'});
-  setFont('helvetica','normal',8,GRAY);
-  doc.text('Residential Tenancies Act, 2006  |  Ontario Regulation 9/18',W/2,y+52,{align:'center'});
-  doc.text('Form 2229E  (December 2020)',W/2,y+63,{align:'center'});
-  // Right: date prepared
-  setFont('helvetica','normal',7.5,GRAY); doc.text(pdfClean('Prepared: '+fmtDate(nowISO())),W-MR-4,y+14,{align:'right'});
+  const TH=82;
+  doc.setFillColor.apply(doc,LTBLUE); doc.setDrawColor.apply(doc,NAVY);
+  doc.setLineWidth(0.8); doc.rect(ML,y,CW,TH,'FD');
+  // Ontario label
+  sf('helvetica','bold',8.5,NAVY); doc.text('ONTARIO',ML+8,y+14);
+  sf('helvetica','normal',7,GRAY);  doc.text('Government of Ontario',ML+8,y+23);
+  doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.3); doc.line(ML+76,y+5,ML+76,y+TH-5);
+  // Centre title
+  const cx=ML+76+(CW-76)/2;
+  sf('helvetica','bold',17,NAVY);  doc.text('Standard Form of Lease',cx,y+22,{align:'center'});
+  sf('helvetica','normal',9,BLACK);doc.text('(Residential Tenancy Agreement)',cx,y+36,{align:'center'});
+  sf('helvetica','normal',7.5,GRAY);
+  doc.text('Residential Tenancies Act, 2006  |  Ontario Regulation 9/18',cx,y+50,{align:'center'});
+  doc.text('Form 2229E  —  December 2020',cx,y+61,{align:'center'});
+  // Right: meta
+  sf('helvetica','normal',7,GRAY);
+  doc.text(pdfClean('Prepared: '+fmtDate(nowISO())),W-MR-4,y+14,{align:'right'});
   doc.text(pdfClean('Ref: '+s.id.toUpperCase()),W-MR-4,y+24,{align:'right'});
-  y+=92;
+  y+=TH+10;
 
-  // Statutory preamble box
-  doc.setFillColor(250,250,245); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.4);
-  doc.rect(ML,y,CW,44,'FD');
-  setFont('helvetica','bold',8,NAVY); doc.text('About this Lease',ML+6,y+10);
-  setFont('helvetica','normal',7.5,GRAY);
-  const preamble='This standard lease is required for most private residential tenancies in Ontario entered into on or after April 30, 2018. '+
+  // Preamble box
+  const preamble='This standard lease is required for most private residential tenancies in Ontario entered into on or after April 30, 2018. '+
     'If a landlord and tenant agree to additional rules or terms, they must not contradict or take away any right or responsibility under the '+
-    'Residential Tenancies Act, 2006. Landlords must provide a copy of the signed lease within 21 days.';
-  doc.splitTextToSize(pdfClean(preamble),CW-12).forEach((l,i)=>doc.text(l,ML+6,y+20+i*9));
-  y+=52;
+    'Residential Tenancies Act, 2006. Landlords must provide a copy of the signed lease within 21 days.';
+  const pLines=doc.splitTextToSize(pdfClean(preamble),CW-14);
+  const pH=pLines.length*9+18;
+  doc.setFillColor(250,250,246); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.4);
+  doc.rect(ML,y,CW,pH,'FD');
+  sf('helvetica','bold',8,NAVY); doc.text('About this Lease',ML+6,y+10);
+  sf('helvetica','normal',7.5,GRAY); pLines.forEach((l,i)=>doc.text(l,ML+6,y+20+i*9));
+  y+=pH+12;
 
-  // ====================== SECTION 1 — PARTIES ======================
-  sectionHeader(1,'Parties to the Agreement');
-  need(88);
-  const hw2=(CW-8)/2;
-  // Landlord box
-  doc.setFillColor.apply(doc,FGRAY); doc.rect(ML,y,hw2,82,'F');
-  doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5); doc.rect(ML,y,hw2,82,'S');
-  doc.setFillColor.apply(doc,LTBLUE); doc.rect(ML,y,hw2,13,'F');
-  setFont('helvetica','bold',8,NAVY); doc.text('LANDLORD',ML+4,y+9);
-  setFont('helvetica','bold',10,BLACK); doc.text(pdfClean(o.name||''),ML+4,y+23);
-  setFont('helvetica','normal',8.5,GRAY);
-  [o.address,o.phone,o.email].filter(Boolean).forEach((l,i)=>{ const lines=doc.splitTextToSize(pdfClean(l),hw2-8); lines.forEach((ln,li)=>doc.text(ln,ML+4,y+34+i*13+li*10)); });
-  if(ag.coLandlord){ setFont('helvetica','italic',8,GRAY); doc.text(pdfClean('Also: '+ag.coLandlord),ML+4,y+73); }
-  // Tenant box
-  const tx=ML+hw2+8;
-  doc.setFillColor.apply(doc,FGRAY); doc.rect(tx,y,hw2,82,'F');
-  doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5); doc.rect(tx,y,hw2,82,'S');
-  doc.setFillColor.apply(doc,LTBLUE); doc.rect(tx,y,hw2,13,'F');
-  setFont('helvetica','bold',8,NAVY); doc.text('TENANT',tx+4,y+9);
-  setFont('helvetica','bold',10,BLACK); doc.text(pdfClean(a.name||''),tx+4,y+23);
-  setFont('helvetica','normal',8.5,GRAY);
-  [a.email,a.phone].filter(Boolean).forEach((l,i)=>doc.text(pdfClean(l),tx+4,y+34+i*13));
-  if(ag.additionalTenants){ setFont('helvetica','italic',8,GRAY);
-    ag.additionalTenants.split('\n').filter(n=>n.trim()).forEach((n,i)=>doc.text(pdfClean('Also: '+n.trim()),tx+4,y+60+i*10)); }
-  y+=88;
-
-  // ====================== SECTION 2 — RENTAL UNIT ======================
-  sectionHeader(2,'Rental Unit');
-  need(40);
-  formBox('Address of rental unit (street number and name, unit number, municipality, postal code)',r.property||'',ML,y,CW,28); y+=34;
-  const ps=Number(ag.parkingSpaces||0);
-  const pw=(CW-8)/3;
-  formBox('Parking spaces included',ps>0?ps+' space'+(ps>1?'s':''):'None',ML,y,pw,24);
-  formBox('Parking description / stall #',ag.parkingDescription||'n/a',ML+pw+4,y,pw,24);
-  formBox('Storage locker / unit',ag.storageDescription||'None',ML+pw*2+8,y,pw,24);
-  y+=30;
-  if(ag.unitOther){ formBox('Other spaces or facilities included',ag.unitOther,ML,y,CW,22); y+=28; }
-
-  // ====================== SECTION 3 — CONTACT INFORMATION ======================
-  sectionHeader(3,'Contact Information for Landlord');
-  need(42);
-  formBox('Address for delivery of notices to landlord (if different from rental unit)',ag.landlordNoticeAddress||o.address||'',ML,y,CW,28); y+=34;
-  const cw3=(CW-8)/2;
-  formBox('Landlord phone number',o.phone||'',ML,y,cw3,22);
-  formBox('Landlord email address',o.email||'',ML+cw3+8,y,cw3,22);
-  y+=28;
-
-  // ====================== SECTION 4 — TERM ======================
-  sectionHeader(4,'Term of Tenancy Agreement');
-  need(52);
-  const tw=(CW-8)/2;
-  formBox('Tenancy start date',r.moveIn?fmtDate(r.moveIn):'',ML,y,tw,24); y+=30;
-  note('After a fixed-term tenancy ends it automatically becomes a month-to-month tenancy unless a new fixed-term agreement is entered into.');
-  need(30);
-  checkbox(ML,y,ag.termType!=='monthly','Fixed term — ends on:'); y+=4;
-  if(ag.termType!=='monthly'){ need(24); formBox('End date of fixed term',ag.termEnd?fmtDate(ag.termEnd):'',ML+14,y,120,20); y+=26; }
-  need(14); checkbox(ML,y,ag.termType==='monthly','Month-to-month — continues until notice given by either party'); y+=16;
-
-  // ====================== SECTION 5 — RENT ======================
-  sectionHeader(5,'Rent');
-  need(100);
-  const r5w=(CW-12)/4;
-  formBox('Base rent amount (per month)',money(r.rent),ML,y,r5w,24);
-  formBox('Rent due on (day of month)',ag.rentDay?'Day '+ag.rentDay:'Day 1',ML+r5w+4,y,r5w,24);
-  formBox('Payment method',ag.rentMethod||'',ML+(r5w+4)*2,y,r5w,24);
-  formBox('Rent payable to',ag.rentPayableTo||o.name||'',ML+(r5w+4)*3,y,r5w,24);
-  y+=30;
-  const frd=ag.firstRentDate||r.moveIn||''; const fra=ag.firstRentAmount||r.rent||'';
-  formBox('Date of first rent payment',frd?fmtDate(frd):'',ML,y,tw,24);
-  formBox('Amount of first payment (may differ if partial month)',money(fra),ML+tw+8,y,tw,24);
-  y+=30;
-
-  // ====================== SECTION 6 — SERVICES ======================
-  sectionHeader(6,'Services and Utilities');
-  note('Check all that are included in the rent. Anything not checked is the tenant\'s responsibility to arrange and pay for separately.');
-  need(56);
-  y+=2;
-  [['Heat',ag.includesHeat],['Water and hot water',ag.includesWater],['Electricity',ag.includesElectricity]].forEach(([lbl,inc])=>{
-    checkbox(ML,y,inc,lbl+(inc?' — included in rent':' — tenant arranges separately')); y+=14;
+  // ── SECTION 1: PARTIES ────────────────────────────────────────
+  sh(1,'Parties to the Agreement');
+  const hw=(CW-8)/2;
+  const partyH=88;
+  need(partyH);
+  [[o,'LANDLORD',ML],[a,'TENANT',ML+hw+8]].forEach(([obj,lbl,px])=>{
+    doc.setFillColor.apply(doc,FGRAY); doc.setDrawColor.apply(doc,BORDER);
+    doc.setLineWidth(0.4); doc.rect(px,y,hw,partyH,'FD');
+    doc.setFillColor.apply(doc,LTBLUE); doc.rect(px,y,hw,14,'F');
+    sf('helvetica','bold',8,NAVY); doc.text(lbl,px+4,y+10);
+    sf('helvetica','bold',10,BLACK); doc.text(pdfClean(obj.name||''),px+4,y+25);
+    sf('helvetica','normal',8,GRAY);
+    [obj.address,obj.phone,obj.email].filter(Boolean).forEach((line,i)=>{
+      doc.splitTextToSize(pdfClean(line),hw-10).forEach((ln,j)=>doc.text(ln,px+4,y+37+i*13+j*10));
+    });
   });
-  if(ps>0&&ag.parkingCost&&Number(ag.parkingCost)>0){
-    need(14); formBox('Parking charge (separate from rent)',money(ag.parkingCost)+'/month',ML,y,CW,20); y+=26;
+  y+=partyH+FBG;
+  if(ag.coLandlord){ const _clH=fbHeight('Co-landlord / additional landlord name',ag.coLandlord,hw); need(_clH+FBG); fb('Co-landlord / additional landlord name',ag.coLandlord,ML,y,hw,_clH); }
+  if(ag.additionalTenants){
+    ag.additionalTenants.split('\n').filter(n=>n.trim()).forEach(n=>{
+      const _atH=fbHeight('Additional tenant',n.trim(),hw); need(_atH+FBG); fb('Additional tenant',n.trim(),ML+hw+8,y,hw,_atH);
+    });
   }
-  if(ag.otherServices){ need(24); formBox('Other services included in rent',ag.otherServices,ML,y,CW,20); y+=26; }
+
+  // ── SECTION 2: RENTAL UNIT ────────────────────────────────────
+  sh(2,'Rental Unit');
+  {const _h=fbHeight('Address of rental unit (unit number, street, municipality, province, postal code)',r.property||'',CW,32); need(_h+FBG); fb('Address of rental unit (unit number, street, municipality, province, postal code)',r.property||'',ML,y,CW,_h);}
+  const ps=Number(ag.parkingSpaces||0);
+  fbRow([
+    ['Parking spaces included',ps>0?ps+' space'+(ps>1?'s':''):'None'],
+    ['Parking stall / description',ag.parkingDescription||'n/a'],
+    ['Storage locker',ag.storageDescription||'None']
+  ],y);
+  if(ag.unitOther){ const _uoH=fbHeight('Other spaces or facilities included',ag.unitOther,CW); need(_uoH+FBG); fb('Other spaces or facilities included',ag.unitOther,ML,y,CW,_uoH); }
+
+  // ── SECTION 3: CONTACT ────────────────────────────────────────
+  sh(3,'Contact Information for Landlord');
+  {const _naH=fbHeight('Address where landlord can receive notices (if different from rental unit)',ag.landlordNoticeAddress||o.address||'',CW,32); need(_naH+FBG); fb('Address where landlord can receive notices (if different from rental unit)',ag.landlordNoticeAddress||o.address||'',ML,y,CW,_naH);}
+  fbRow([['Landlord phone',o.phone||''],['Landlord email',o.email||'']],y);
+
+  // ── SECTION 4: TERM ───────────────────────────────────────────
+  sh(4,'Term of Tenancy Agreement');
+  {const _tsH=fbHeight('Tenancy start date',r.moveIn?fmtDate(r.moveIn):'',hw); need(_tsH+FBG); fb('Tenancy start date',r.moveIn?fmtDate(r.moveIn):'',ML,y,hw,_tsH);}
+  note('After a fixed-term tenancy ends it automatically becomes month-to-month unless both parties agree to a new fixed term.');
+  need(CBH*2+4);
+  y+=chk(ML,y,ag.termType!=='monthly','Fixed term ending on:')+4;
+  if(ag.termType!=='monthly'){
+    const _endH=fbHeight('End date of fixed-term tenancy',ag.termEnd?fmtDate(ag.termEnd):'',160); need(_endH+FBG+4); y+=2;
+    fb('End date of fixed-term tenancy',ag.termEnd?fmtDate(ag.termEnd):'',ML+18,y,160,_endH);
+    y+=4;
+  }
+  need(CBH+4); y+=chk(ML,y,ag.termType==='monthly','Month-to-month — continues until notice given by either party')+6;
+
+  // ── SECTION 5: RENT ───────────────────────────────────────────
+  doc.addPage(); y=MT;
+  sh(5,'Rent');
+  fbRow([
+    ['Base rent (per month)',money(r.rent)],
+    ['Rent due on (day of month)',ag.rentDay?'Day '+ag.rentDay:'Day 1'],
+    ['Payment method',ag.rentMethod||''],
+    ['Rent payable to',ag.rentPayableTo||o.name||'']
+  ],y);
+  const frd=ag.firstRentDate||r.moveIn||''; const fra=ag.firstRentAmount||r.rent||'';
+  fbRow([['Date of first rent payment',frd?fmtDate(frd):''],['Amount of first payment (if partial month differs)',money(fra)]],y);
+
+  // ── SECTION 6: SERVICES ───────────────────────────────────────
+  sh(6,'Services and Utilities');
+  note('Check each item that is included in the rent. Anything not checked is the tenant\'s responsibility to arrange and pay separately.');
+  need(CBH*3+12);
+  [['Heat',ag.includesHeat],['Water and hot water',ag.includesWater],['Electricity',ag.includesElectricity]].forEach(([lbl,inc])=>{
+    need(CBH+4); y+=chk(ML,y,inc,lbl+(inc?' — included in rent':' — not included, tenant responsible'))+2;
+  });
   y+=4;
+  if(ps>0&&ag.parkingCost&&Number(ag.parkingCost)>0){
+    {const _pcH=fbHeight('Parking charge (separate from rent, $/month)',money(ag.parkingCost)+'/month',CW); need(_pcH+FBG); fb('Parking charge (separate from rent, $/month)',money(ag.parkingCost)+'/month',ML,y,CW,_pcH);}
+  }
+  if(ag.otherServices){ const _osH=fbHeight('Other services included in rent',ag.otherServices,CW); need(_osH+FBG); fb('Other services included in rent',ag.otherServices,ML,y,CW,_osH); }
 
-  // ====================== SECTION 7 — RENT DISCOUNTS ======================
-  sectionHeader(7,'Rent Discounts');
-  note('A rent discount reduces the amount the tenant must pay. Any discount must be described here. Discounts are already reflected in the base rent in Section 5.');
-  need(30);
-  checkbox(ML,y,!ag.hasDiscount,'No rent discount'); y+=14;
-  checkbox(ML,y,!!ag.hasDiscount,'A rent discount applies:'); y+=4;
+  // ── SECTION 7: DISCOUNTS ──────────────────────────────────────
+  sh(7,'Rent Discounts');
+  note('A discount reduces what the tenant pays. Must be described here even if already reflected in the rent amount above.');
+  need(CBH*2+8);
+  y+=chk(ML,y,!ag.hasDiscount,'No rent discount applies')+4;
+  y+=chk(ML,y,!!ag.hasDiscount,'A rent discount applies:')+4;
   if(ag.hasDiscount){
-    const dw=(CW-8)/2;
-    need(26); formBox('Discount amount',money(ag.discountAmount||'')+'/month',ML+14,y,dw,22);
-    formBox('Description of discount',ag.discountDescription||'',ML+14+dw+8,y,dw-14,22); y+=28;
-  } else { y+=8; }
+    fbRow([['Discount amount ($/month)',money(ag.discountAmount||'')],['Description of discount',ag.discountDescription||'']],y);
+  }
 
-  // ====================== SECTION 8 — RENT DEPOSIT ======================
-  sectionHeader(8,'Rent Deposit');
-  note('A landlord can collect a last month\'s rent deposit. It must be applied to the last month\'s rent. Interest accrues annually at the rent increase guideline rate.');
-  need(38);
-  checkbox(ML,y,!ag.depositHeld,'No rent deposit collected'); y+=14;
-  checkbox(ML,y,!!ag.depositHeld,'A rent deposit has been collected'); y+=4;
+  // ── SECTION 8: RENT DEPOSIT ───────────────────────────────────
+  sh(8,'Rent Deposit');
+  note('A landlord may collect a last month\'s rent deposit. It is held and applied to the last month\'s rent. Interest accrues annually at the Ontario rent increase guideline rate.');
+  need(CBH*2+8);
+  y+=chk(ML,y,!ag.depositHeld,'No rent deposit has been collected')+4;
+  y+=chk(ML,y,!!ag.depositHeld,'A rent deposit has been collected')+4;
   if(ag.depositHeld){
-    const dw=(CW-8)/2;
-    need(26); formBox('Deposit amount',money(ag.depositAmount||r.rent||''),ML+14,y,dw,22);
-    formBox('Date deposit paid',ag.depositDate?fmtDate(ag.depositDate):'',ML+14+dw+8,y,dw-14,22); y+=28;
-  } else { y+=8; }
+    fbRow([['Deposit amount',money(ag.depositAmount||r.rent||'')],['Date deposit was paid',ag.depositDate?fmtDate(ag.depositDate):'']],y);
+  }
 
-  // ====================== SECTION 9 — KEY DEPOSIT ======================
-  sectionHeader(9,'Key Deposit');
-  note('A key deposit can be charged only if it does not exceed the cost to replace the key, fob, or card. It must be returned when the tenancy ends.');
-  need(38);
-  checkbox(ML,y,!ag.keyDeposit,'No key deposit collected'); y+=14;
-  checkbox(ML,y,!!ag.keyDeposit,'A key deposit has been collected'); y+=4;
+  // ── SECTION 9: KEY DEPOSIT ────────────────────────────────────
+  sh(9,'Key Deposit');
+  note('A key deposit may only be charged if it does not exceed the cost of replacing the key, fob, or card. It must be returned when the tenancy ends.');
+  need(CBH*2+8);
+  y+=chk(ML,y,!ag.keyDeposit,'No key deposit has been collected')+4;
+  y+=chk(ML,y,!!ag.keyDeposit,'A key deposit has been collected')+4;
   if(ag.keyDeposit){
-    const kw=(CW-8)/2;
-    need(26); formBox('Key deposit amount',money(ag.keyDepositAmount||''),ML+14,y,kw,22);
-    formBox('Cost to replace key / fob',money(ag.keyReplacementCost||''),ML+14+kw+8,y,kw-14,22); y+=28;
-  } else { y+=8; }
+    fbRow([['Key deposit amount',money(ag.keyDepositAmount||'')],['Replacement cost of key/fob',money(ag.keyReplacementCost||'')]],y);
+  }
 
-  // ====================== SECTION 10 — SMOKING ======================
-  sectionHeader(10,'Smoking');
-  need(44);
-  y+=2;
-  checkbox(ML,y,!ag.smokingAllowed,'Smoking and vaping are not permitted anywhere on the property (including balconies, patios, indoor common areas)'); y+=14;
-  checkbox(ML,y,!!ag.smokingAllowed,'Smoking/vaping is permitted in the following locations only:'); y+=4;
-  if(ag.smokingAllowed){ need(22); formBox('Where smoking/vaping is permitted',ag.smokingDetails||'',ML+14,y,CW-14,20); y+=26; }
-  else { y+=8; }
+  // ── SECTION 10: SMOKING ───────────────────────────────────────
+  sh(10,'Smoking');
+  need(CBH*2+10);
+  y+=chk(ML,y,!ag.smokingAllowed,'Smoking and vaping are not permitted anywhere on the property (including balconies, patios, and indoor common areas)')+4;
+  y+=chk(ML,y,!!ag.smokingAllowed,'Smoking or vaping is permitted in the following areas:')+4;
+  if(ag.smokingAllowed){ const _smH=fbHeight('Areas where smoking/vaping is permitted',ag.smokingDetails||'',CW-18); need(_smH+FBG); fb('Areas where smoking/vaping is permitted',ag.smokingDetails||'',ML+18,y,CW-18,_smH); }
+  else { y+=4; }
 
-  // ====================== SECTION 11 — TENANT INSURANCE ======================
-  sectionHeader(11,"Tenant's Insurance");
-  need(30); y+=2;
-  checkbox(ML,y,!!ag.insuranceRequired,'The tenant is required to obtain and maintain tenant liability insurance throughout the tenancy'); y+=14;
-  checkbox(ML,y,!ag.insuranceRequired,'Tenant insurance is not required'); y+=14;
-  note('Even when not required, tenants are strongly encouraged to purchase contents and liability insurance as the landlord\'s insurance does not cover the tenant\'s belongings or liability.');
+  // ── SECTION 11: INSURANCE ─────────────────────────────────────
+  sh(11,"Tenant's Insurance");
+  need(CBH*2+10);
+  y+=chk(ML,y,!!ag.insuranceRequired,'The tenant is required to obtain and maintain tenant liability insurance for the duration of the tenancy')+4;
+  y+=chk(ML,y,!ag.insuranceRequired,'Tenant insurance is not required by this agreement')+4;
+  note('Even when not required, tenants are strongly encouraged to purchase content and liability insurance. The landlord\'s insurance does not cover the tenant\'s possessions or personal liability.');
 
-  // ====================== SECTION 12 — CHANGES TO UNIT ======================
-  sectionHeader(12,'Changes to the Rental Unit');
-  note('The tenant agrees not to make alterations, decorating, or additions to the rental unit (including changing the locks) without the consent of the landlord. Subject to the Residential Tenancies Act, 2006, if the tenant makes changes without consent, the landlord can require the tenant to undo the changes. When vacating, the tenant must leave the unit as it was at the start of the tenancy, except for reasonable wear and tear.');
-  if(ag.changesNotes){ need(26); formBox('Additional terms regarding changes',ag.changesNotes,ML,y,CW,22); y+=28; }
+  // ── SECTION 12: CHANGES TO UNIT ──────────────────────────────
+  doc.addPage(); y=MT;
+  sh(12,'Changes to the Rental Unit');
+  note('The tenant agrees not to alter, add to, or renovate the rental unit (including changing the locks) without the written consent of the landlord. If changes are made without consent, the landlord may require the tenant to restore the unit to its original condition. On vacating, the tenant must leave the unit as received at the start of the tenancy, except for reasonable wear and tear.');
+  if(ag.changesNotes){ const _cnH=fbHeight('Additional agreed terms regarding changes to the unit',ag.changesNotes,CW); need(_cnH+FBG); fb('Additional agreed terms regarding changes to the unit',ag.changesNotes,ML,y,CW,_cnH); }
 
-  // ====================== SECTION 13 — MAINTENANCE ======================
-  sectionHeader(13,'Maintenance and Repairs');
-  note('The landlord is responsible for maintaining the rental property in a good state of repair and fit for habitation, and for complying with health, safety, housing, and maintenance standards, even if the tenant knew of the problems before entering into the tenancy agreement. The tenant is responsible for ordinary cleanliness of the unit and for any damage caused by the wilful or negligent conduct of the tenant or persons permitted in the property.');
+  // ── SECTION 13: MAINTENANCE ───────────────────────────────────
+  sh(13,'Maintenance and Repairs');
+  note('The landlord is responsible for maintaining the rental property in a good state of repair and fit for habitation, and for complying with health, safety, housing, and maintenance standards, even if the tenant was aware of a problem before entering the tenancy. The tenant is responsible for ordinary cleanliness and for repairing any damage caused by the wilful or negligent conduct of the tenant or their guests.');
 
-  // ====================== SECTION 14 — ASSIGNMENT AND SUBLETTING ======================
-  sectionHeader(14,'Assignment and Subletting');
-  note('The tenant may assign or sublet the rental unit to another person only with the written consent of the landlord. The landlord cannot arbitrarily or unreasonably withhold consent. If the landlord does not respond within 7 days of a written request, the landlord is deemed to have given consent to the sublet.');
+  // ── SECTION 14: ASSIGNMENT AND SUBLETTING ────────────────────
+  sh(14,'Assignment and Subletting');
+  note('The tenant may assign or sublet the rental unit only with the written consent of the landlord. The landlord may not arbitrarily or unreasonably withhold consent to a sublet. If the landlord does not respond in writing within 7 days of a written sublet request, the landlord is deemed to have consented.');
 
-  // ====================== SECTION 15 — ADDITIONAL TERMS ======================
-  sectionHeader(15,'Additional Terms (Schedule A)');
-  note('The landlord and tenant may agree to additional terms. These terms cannot take away any right or responsibility under the Residential Tenancies Act, 2006. Both parties must sign or initial any handwritten additions to this section.');
-  need(60);
+  // ── SECTION 15: ADDITIONAL TERMS ─────────────────────────────
+  sh(15,'Additional Terms (Schedule A)');
+  note('The landlord and tenant may agree to additional terms below. These terms cannot take away any right or responsibility under the Residential Tenancies Act, 2006 — any such term is void. Both parties must sign or initial any handwritten additions.');
   const atText=ag.additionalTerms||'';
-  const atH=Math.min(160,Math.max(50,doc.splitTextToSize(pdfClean(atText||' '),CW-8).length*11+16));
+  const atLines=doc.splitTextToSize(pdfClean(atText||' '),CW-10);
+  const atH=Math.min(H-MB-y-10,Math.max(55,atLines.length*11+20));
+  need(atH+FBG);
   doc.setFillColor(255,255,255); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5);
   doc.rect(ML,y,CW,atH,'FD');
-  setFont('helvetica','normal',7,GRAY); doc.text('Additional terms (if none, leave blank)',ML+3,y+8);
-  if(atText){ setFont('helvetica','normal',9,BLACK);
-    doc.splitTextToSize(pdfClean(atText),CW-8).slice(0,Math.floor((atH-14)/11)).forEach((l,i)=>doc.text(l,ML+3,y+18+i*11)); }
-  y+=atH+6;
+  sf('helvetica','normal',6.5,GRAY); doc.text('Additional terms — if none, leave blank',ML+3,y+8);
+  if(atText){ sf('helvetica','normal',9,BLACK);
+    atLines.slice(0,Math.floor((atH-14)/11)).forEach((l,i)=>doc.text(l,ML+3,y+19+i*11)); }
+  y+=atH+FBG;
 
-  // ====================== SECTION 16 — CHANGES TO AGREEMENT ======================
-  sectionHeader(16,'Changes to this Agreement');
-  note('Changes to this agreement can only be made if both parties agree. Any agreed-upon changes must be written down and signed by both parties. A change that is inconsistent with the Residential Tenancies Act, 2006 is void.');
+  // ── SECTION 16: CHANGES TO AGREEMENT ─────────────────────────
+  sh(16,'Changes to this Agreement');
+  note('Changes to this agreement can only be made if both parties agree. Any changes must be made in writing and signed by both the landlord and tenant. Any change that takes away a right or responsibility under the Residential Tenancies Act, 2006 is void.');
 
-  // ====================== SECTION 17 — SIGNATURES ======================
-  sectionHeader(17,'Signatures');
-  note('The landlord must provide the tenant with a copy of the signed lease within 21 days. Each party must retain a copy.');
+  // ── SECTION 17: SIGNATURES ────────────────────────────────────
+  sh(17,'Signatures');
+  note('The landlord must give the tenant a copy of the signed lease within 21 days of signing. Each party must keep a copy of this agreement.');
   y+=4;
 
   const sigParties=[[o.name,'Landlord'],[a.name,'Tenant']];
   if(ag.coLandlord) sigParties.splice(1,0,[ag.coLandlord,'Co-landlord']);
   if(ag.additionalTenants) ag.additionalTenants.split('\n').filter(n=>n.trim()).forEach(n=>sigParties.push([n.trim(),'Additional Tenant']));
 
+  // sigH=96: role header 0-14, name 23-43, sig line at 54, date line at 76 (always inside box)
+  const sigH=96;
   for(let i=0;i<sigParties.length;i+=2){
-    const pair=sigParties.slice(i,i+2); need(80); y+=4;
+    const pair=sigParties.slice(i,i+2);
+    need(sigH+10); y+=6;
     pair.forEach(([name,role],pi)=>{
-      const sx=ML+pi*(hw2+8), sw=hw2;
-      doc.setFillColor.apply(doc,FGRAY); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5);
-      doc.rect(sx,y,sw,70,'FD');
-      doc.setFillColor.apply(doc,LTBLUE); doc.rect(sx,y,sw,12,'F');
-      setFont('helvetica','bold',8,NAVY); doc.text(pdfClean(role.toUpperCase()),sx+4,y+9);
-      setFont('helvetica','normal',9,BLACK); doc.text(pdfClean(name||''),sx+4,y+24);
-      // signature line
-      doc.setDrawColor(80,80,80); doc.setLineWidth(0.5); doc.line(sx+4,y+46,sx+sw-4,y+46);
-      setFont('helvetica','normal',7,GRAY); doc.text('Signature',sx+4,y+54);
-      // date line
-      doc.line(sx+4,y+66,sx+sw-4,y+66);
-      doc.text('Date (YYYY-MM-DD)',sx+4,y+70.5);
+      const sx=ML+pi*(hw+8), sw=hw;
+      doc.setFillColor.apply(doc,FGRAY); doc.setDrawColor.apply(doc,BORDER);
+      doc.setLineWidth(0.4); doc.rect(sx,y,sw,sigH,'FD');
+      doc.setFillColor.apply(doc,LTBLUE); doc.rect(sx,y,sw,14,'F');
+      sf('helvetica','bold',8,NAVY); doc.text(pdfClean(role.toUpperCase()),sx+5,y+10);
+      sf('helvetica','normal',7,GRAY); doc.text('Print name:',sx+5,y+23);
+      sf('helvetica','normal',9.5,BLACK);
+      doc.splitTextToSize(pdfClean(name||''),sw-10).slice(0,2).forEach((l,j)=>doc.text(l,sx+5,y+33+j*11));
+      doc.setDrawColor(90,90,90); doc.setLineWidth(0.5);
+      doc.line(sx+5,y+54,sx+sw-5,y+54);
+      sf('helvetica','normal',6.5,GRAY); doc.text('Signature',sx+5,y+62);
+      doc.setDrawColor(90,90,90); doc.setLineWidth(0.5);
+      doc.line(sx+5,y+76,sx+sw-5,y+76);
+      sf('helvetica','normal',6.5,GRAY); doc.text('Date signed (YYYY-MM-DD)',sx+5,y+84);
     });
-    y+=76;
+    y+=sigH+10;
   }
 
-  // footer note
+  // ── FOOTER NOTE ───────────────────────────────────────────────
   need(28); y+=6;
   doc.setFillColor(245,248,252); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.3);
-  doc.rect(ML,y,CW,22,'FD');
-  setFont('helvetica','italic',7.5,GRAY);
-  doc.text(pdfClean('This document was generated from Form 2229E (Ontario Standard Lease, December 2020, O. Reg. 9/18). It does not constitute legal advice.'),ML+4,y+9);
-  doc.text(pdfClean('Official blank form: forms.mgcs.gov.on.ca/en/dataset/047-2229   |   Store securely — contains personal information.'),ML+4,y+18);
-  y+=28;
+  doc.rect(ML,y,CW,24,'FD');
+  sf('helvetica','italic',7,GRAY);
+  doc.text(pdfClean('Generated from Ontario Standard Lease Form 2229E (December 2020) — does not constitute legal advice.'),ML+4,y+9);
+  doc.text(pdfClean('Official blank form: forms.mgcs.gov.on.ca/en/dataset/047-2229   —   Store securely; contains personal information.'),ML+4,y+19);
+  y+=30;
 
-  // page headers/footers
+  // ── PAGE HEADERS / FOOTERS ────────────────────────────────────
   const pages=doc.getNumberOfPages();
   for(let p=1;p<=pages;p++){
     doc.setPage(p);
-    // top bar
-    doc.setFillColor.apply(doc,NAVY); doc.rect(0,0,W,8,'F');
-    doc.setFillColor.apply(doc,BLUE); doc.rect(0,8,W,3,'F');
-    // bottom bar
-    doc.setFillColor(240,240,240); doc.rect(0,H-20,W,20,'F');
-    doc.setDrawColor(200,200,200); doc.setLineWidth(0.3); doc.line(0,H-20,W,H-20);
-    setFont('helvetica','normal',7,GRAY);
-    doc.text(pdfClean('Residential Tenancy Agreement — Form 2229E (Dec 2020)  |  '+s.id.toUpperCase()),ML,H-7);
-    doc.text('Page '+p+' of '+pages,W-MR,H-7,{align:'right'});
+    doc.setFillColor.apply(doc,NAVY); doc.rect(0,0,W,10,'F');
+    doc.setFillColor.apply(doc,BLUE); doc.rect(0,10,W,3,'F');
+    doc.setFillColor(240,240,240); doc.rect(0,H-MB,W,MB,'F');
+    doc.setDrawColor(210,210,210); doc.setLineWidth(0.3); doc.line(0,H-MB,W,H-MB);
+    sf('helvetica','normal',7,GRAY);
+    doc.text(pdfClean('Ontario Standard Lease (Form 2229E, Dec 2020) — '+s.id.toUpperCase()),ML,H-MB+11);
+    doc.text('Page '+p+' of '+pages,W-MR,H-MB+11,{align:'right'});
   }
   return doc;
 }
@@ -2549,7 +2598,7 @@ function downloadLeasePdf(){
   const s=cur(); if(!s) return;
   const doc=buildLeasePdf(); if(!doc){ toast('PDF library not loaded (offline?)'); return; }
   if(!s.agreement) s.agreement={};
-  s.agreement.generatedAt=nowISO(); s.updatedAt=nowISO(); save(); renderList();
+  s.agreement.generatedAt=nowISO(); s.updatedAt=nowISO(); save(); renderList(); render();
   const nm=(s.applicant.name||'tenant').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
   doc.save('lease-'+nm+'-'+todayISO()+'.pdf'); toast('Lease PDF downloaded');
 }
