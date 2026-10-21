@@ -96,7 +96,7 @@ a{color:var(--ink)}
 </style>
 </head>
 <body>
-<div class="top"><div class="brand">Tenant <em>Screening</em></div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="newScreening()">+ New screening</button></div></div>
+<div class="top"><div class="brand">Tenant <em>Screening</em></div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button class="primary" onclick="newScreening()">+ New screening</button><button onclick="ui.view='notices';ui.noticeForm=null;ui.noticeQ1='';ui.noticeQ2='';render()" style="background:transparent;border-color:#D9B77A;color:#D9B77A">LTB Notices</button></div></div>
 <div class="layout"><aside id="list"></aside><main id="main"></main></div>
 <div class="toast" id="toast"></div>
 
@@ -141,8 +141,8 @@ const DIMS = [
 ];
 
 /* ======================= STATE ======================= */
-let data = { screenings:[] };
-let ui = { view:'home', id:null, confirmDelete:null };
+let data = { screenings:[], owner:{name:'',address:'',phone:'',email:''}, ownerProfiles:[] };
+let ui = { view:'home', id:null, confirmDelete:null, ownerOpen:false, ownerTab:'edit', editingProfileId:null, noticeForm:null, noticeData:null, noticeQ1:'', noticeQ2:'' };
 const STEPS=[{n:1,l:'Applicant'},{n:2,l:'Criteria'},{n:3,l:'Documents'},{n:4,l:'Checks'},{n:5,l:'Result'},{n:6,l:'Rent Roll'}];
 function stepInfo(s){
   const e=evaluate(s); const done=DIMS.filter(d=>dimStatus(s,d.key)!=='unchecked').length; const anyConcern=DIMS.some(d=>dimStatus(s,d.key)==='concern');
@@ -195,7 +195,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;'
 function fmtDate(iso){ if(!iso) return '-'; const d=new Date(iso.length===10?iso+'T12:00:00':iso); return d.toLocaleDateString('en-CA',{year:'numeric',month:'short',day:'numeric'}); }
 function fmtDT(iso){ if(!iso) return '-'; const d=new Date(iso); return fmtDate(iso)+' '+d.toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'}); }
 function money(n){ return '$'+Number(n||0).toLocaleString('en-CA',{minimumFractionDigits:0,maximumFractionDigits:2}); }
-function load(){ try{ const v=localStorage.getItem(STORE_KEY); if(v) data=JSON.parse(v); }catch(e){} }
+function load(){ try{ const v=localStorage.getItem(STORE_KEY); if(v) data=JSON.parse(v); }catch(e){} if(!data.owner) data.owner={name:'',address:'',phone:'',email:''}; if(!data.ownerProfiles) data.ownerProfiles=[]; }
 function save(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }catch(e){ toast('Could not save in this browser'); } }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toast._h); toast._h=setTimeout(()=>t.classList.remove('show'),2200); }
 function cur(){ return data.screenings.find(s=>s.id===ui.id); }
@@ -206,7 +206,8 @@ function blankScreening(){
     rental:{property:'',rent:'',moveIn:''},
     criteria:{minCredit:'',refRequired:true,lockedAt:null},
     consents:{}, checks:{}, credit:{score:''}, income:{monthly:'',sufficient:''},
-    override:{outcome:'',justification:''}, applicantResponse:'', docCheck:null, sourceVerified:{method:'',date:'',steps:[]}, attestation:{given:false,at:null}, docs:[], docConfirm:{idPhoto:false,employer:false}, manual:{}, prelim:null, prelimIn:{}, source:null, sentAt:null, ackAt:null, downloadedAt:null };
+    override:{outcome:'',justification:''}, applicantResponse:'', docCheck:null, sourceVerified:{method:'',date:'',steps:[]}, attestation:{given:false,at:null}, docs:[], docConfirm:{idPhoto:false,employer:false}, manual:{}, prelim:null, prelimIn:{}, source:null, sentAt:null, ackAt:null, downloadedAt:null,
+    agreement:{termType:'fixed',termEnd:'',rentDay:'1',rentMethod:'',includesHeat:false,includesWater:false,includesElectricity:false,parkingSpaces:'0',parkingCost:'',smokingAllowed:false,insuranceRequired:true,additionalTerms:'',generatedAt:null} };
 }
 function newScreening(){ const s=blankScreening(); data.screenings.unshift(s); save(); ui={view:'edit',id:s.id,confirmDelete:null}; render(); }
 function sampleScreening(){
@@ -283,12 +284,158 @@ function evaluate(s){
 /* ======================= UI: LIST ======================= */
 function chip(status){ return `<span class="chip c-${status}">${STATUS_LABEL[status]||OUTCOME_LABEL[status]||status}</span>`; }
 function outChip(o){ return `<span class="chip c-${o}">${OUTCOME_LABEL[o]}</span>`; }
+function ownerActiveForm(o, extraButtons){
+  const ownerSet=!!(o.name||o.address);
+  return `<div class="field"><label>Full legal name</label><input id="own-name" type="text" value="${esc(o.name||'')}" oninput="setOwner('name',this.value)" placeholder="e.g. Jane Smith"></div>
+    <div class="field"><label>Address</label><input id="own-addr" type="text" value="${esc(o.address||'')}" oninput="setOwner('address',this.value)" placeholder="123 Main St, Toronto ON M1A 1A1"></div>
+    <div class="field"><label>Phone</label><input id="own-phone" type="tel" value="${esc(o.phone||'')}" oninput="setOwner('phone',this.value)"></div>
+    <div class="field"><label>Email</label><input id="own-email" type="email" value="${esc(o.email||'')}" oninput="setOwner('email',this.value)"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">${extraButtons}</div>`;
+}
+function ownerProfileEditForm(p){
+  return `<div class="field"><label>Full legal name</label><input data-f="name" type="text" value="${esc(p.name||'')}" placeholder="e.g. Jane Smith"></div>
+    <div class="field"><label>Address</label><input data-f="address" type="text" value="${esc(p.address||'')}" placeholder="123 Main St, Toronto ON M1A 1A1"></div>
+    <div class="field"><label>Phone</label><input data-f="phone" type="tel" value="${esc(p.phone||'')}"></div>
+    <div class="field"><label>Email</label><input data-f="email" type="email" value="${esc(p.email||'')}"></div>`;
+}
 function renderList(){
   const el=document.getElementById('list');
-  el.innerHTML = `<div class="sec-no" style="margin-bottom:8px">Saved screenings</div>` +
+  const o=data.owner; const ownerSet=!!(o.name||o.address);
+  const tab=ui.ownerTab||'edit';
+  const activeId=data.owner._id||null;
+  let ownerBody='';
+  if(ui.ownerOpen){
+    const tabBtn=(t,lbl)=>`<button class="small ${tab===t?'primary':''}" style="border-radius:12px" onclick="ui.ownerTab='${t}';renderList()">${lbl}</button>`;
+    ownerBody=`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${tabBtn('edit','Active')}&nbsp;${tabBtn('saved','Saved ('+data.ownerProfiles.length+')')}&nbsp;${tabBtn('backup','Backup')}</div>`;
+
+    if(tab==='edit'){
+      const savedAt=o._savedAt?`<span style="color:var(--green);font-size:12px;font-weight:600">✓ Saved ${esc(fmtDT(o._savedAt))}</span>`:'';
+      ownerBody+=ownerActiveForm(o,
+        `<button id="owner-save-btn" class="small primary" onclick="saveOwnerProfile()" ${ownerSet?'':'disabled'}>Save to profiles</button>${savedAt}`
+      );
+
+    } else if(tab==='saved'){
+      const profs=data.ownerProfiles;
+      ownerBody+=`<button class="small primary" style="margin-bottom:10px;width:100%" onclick="addNewOwnerProfile()">+ New profile</button>`;
+      if(!profs.length){
+        ownerBody+=`<p class="hint">No saved profiles yet.</p>`;
+      } else {
+        ownerBody+=profs.map((p,i)=>{
+          const isEditing=ui.editingProfileId===p.id;
+          const isActive=activeId&&activeId===p.id;
+          if(isEditing){
+            return `<div id="profile-edit-${p.id}" style="border:2px solid var(--ink);border-radius:3px;padding:10px;margin-bottom:8px">
+              <div class="sec-no" style="margin-bottom:6px">Editing profile</div>
+              ${ownerProfileEditForm(p)}
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+                <button class="small primary" onclick="commitProfileEdit('${p.id}')">Save</button>
+                <button class="small" onclick="cancelProfileEdit('${p.id}')">Cancel</button>
+                <button class="small danger" onclick="deleteOwnerProfile('${p.id}')">Delete</button>
+              </div>
+            </div>`;
+          }
+          return `<div style="border:1px solid ${isActive?'var(--ink)':'var(--line)'};border-left:4px solid ${isActive?'var(--ink)':'var(--line)'};border-radius:3px;padding:8px 10px;margin-bottom:6px">
+            <div style="font-weight:600;font-size:13px">${esc(p.name||'(unnamed)')}${isActive?` <span class="chip" style="background:var(--ink);font-size:10px;padding:1px 6px">Active</span>`:''}</div>
+            <div style="font-size:12px;color:var(--muted);margin:2px 0">${esc(p.address||'—')}</div>
+            <div style="font-size:12px;color:var(--muted)">${[p.phone,p.email].filter(Boolean).map(esc).join(' · ')||''}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">${p.savedAt?'Saved '+fmtDate(p.savedAt):''}</div>
+            <div style="display:flex;gap:6px;margin-top:7px">
+              <button class="small primary" onclick="loadOwnerProfile('${p.id}')">Set active</button>
+              <button class="small" onclick="ui.editingProfileId='${p.id}';renderList()">Edit</button>
+              <button class="small danger" onclick="deleteOwnerProfile('${p.id}')">Delete</button>
+            </div></div>`;
+        }).join('');
+      }
+
+    } else if(tab==='backup'){
+      ownerBody+=`<p class="hint" style="margin-bottom:8px">Exports everything: all screenings, all owner profiles, and the active owner. The file name includes the date and time.</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="small primary" onclick="exportBackup()">Export backup (JSON)</button>
+        <label class="small" style="display:inline-block;padding:4px 9px;font-size:13px;border:1px solid var(--ink);border-radius:3px;cursor:pointer;text-align:center">Import backup (JSON)<input type="file" accept=".json,application/json" style="display:none" onchange="importBackup(this.files[0])"></label>
+      </div>`;
+    }
+    ownerBody+=`</div>`;
+  }
+  const ownerPanel=`<div class="panel" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ui.ownerOpen=!ui.ownerOpen;render()">
+      <div><div class="sec-no">Owner profile</div><div style="font-weight:600;font-size:14px;margin-top:2px">${ownerSet?esc(o.name||'(name not set)'):'Not set — add your details'}</div>${ownerSet&&o.address?`<div style="font-size:12px;color:var(--muted)">${esc(o.address)}</div>`:''}</div>
+      <span style="font-size:18px;color:var(--muted)">${ui.ownerOpen?'▲':'▼'}</span>
+    </div>${ownerBody}
+  </div>`;
+  el.innerHTML = ownerPanel +
+    `<div class="sec-no" style="margin-bottom:8px">Saved screenings</div>` +
     (data.screenings.length? data.screenings.map(s=>{ const e=evaluate(s);
-      return `<div class="item ${s.id===ui.id?'active':''}" onclick="openScreening('${s.id}')"><div class="t">${esc(s.applicant.name||'Unnamed applicant')}</div><div class="m">${esc(s.rental.property||'No property entered')}</div><div style="margin-top:5px">${outChip(e.final)}</div></div>`;
+      return `<div class="item ${s.id===ui.id&&ui.view!=='agreement'?'active':''}" onclick="openScreening('${s.id}')"><div class="t">${esc(s.applicant.name||'Unnamed applicant')}</div><div class="m">${esc(s.rental.property||'No property entered')}</div><div style="margin-top:5px">${outChip(e.final)}${s.agreement&&s.agreement.generatedAt?`<span class="chip" style="background:var(--ink);margin-left:4px">Lease</span>`:''}</div></div>`;
     }).join('') : `<p class="hint">Nothing yet.</p>`);
+}
+function setOwner(field,val){
+  data.owner[field]=val; save();
+  const ownerSet=!!(data.owner.name||data.owner.address);
+  const btn=document.getElementById('owner-save-btn'); if(btn) btn.disabled=!ownerSet;
+}
+function saveOwnerProfile(){
+  const o=data.owner; if(!o.name&&!o.address){ toast('Enter at least a name or address first'); return; }
+  const now=nowISO(); data.owner._savedAt=now;
+  if(o._id){
+    const i=data.ownerProfiles.findIndex(p=>p.id===o._id);
+    if(i>=0){ data.ownerProfiles[i]={...data.ownerProfiles[i],...o,id:o._id,savedAt:now}; }
+    else { data.ownerProfiles.unshift({name:o.name,address:o.address,phone:o.phone,email:o.email,id:o._id,savedAt:now}); }
+  } else {
+    const id=uid(); data.owner._id=id;
+    data.ownerProfiles.unshift({name:o.name,address:o.address,phone:o.phone,email:o.email,id,savedAt:now});
+  }
+  save(); ui.ownerTab='edit'; renderList(); toast('Owner profile saved');
+}
+function addNewOwnerProfile(){
+  const id=uid(); const p={id,name:'',address:'',phone:'',email:'',savedAt:null};
+  data.ownerProfiles.unshift(p); ui.editingProfileId=id; save(); renderList();
+}
+
+function cancelProfileEdit(id){
+  const p=data.ownerProfiles.find(x=>x.id===id);
+  if(p&&!p.savedAt) data.ownerProfiles=data.ownerProfiles.filter(x=>x.id!==id);
+  ui.editingProfileId=null; save(); renderList();
+}
+function commitProfileEdit(id){
+  const p=data.ownerProfiles.find(x=>x.id===id); if(!p) return;
+  const container=document.getElementById('profile-edit-'+id); if(!container) return;
+  container.querySelectorAll('input[data-f]').forEach(el=>{ p[el.dataset.f]=el.value; });
+  if(!p.name&&!p.address){ toast('Enter at least a name or address'); return; }
+  p.savedAt=nowISO(); save(); ui.editingProfileId=null;
+  if(data.owner._id===id){ data.owner={...data.owner,name:p.name,address:p.address,phone:p.phone,email:p.email,_savedAt:p.savedAt}; save(); }
+  renderList(); toast('✓ Profile saved — '+(p.name||''));
+}
+function loadOwnerProfile(id){
+  const p=data.ownerProfiles.find(x=>x.id===id); if(!p) return;
+  data.owner={name:p.name||'',address:p.address||'',phone:p.phone||'',email:p.email||'',_id:p.id};
+  save(); ui.ownerTab='edit'; renderList(); toast('Active: '+p.name);
+}
+function deleteOwnerProfile(id){
+  if(!confirm('Delete this owner profile?')) return;
+  data.ownerProfiles=data.ownerProfiles.filter(p=>p.id!==id);
+  if(data.owner._id===id){ data.owner={name:'',address:'',phone:'',email:''}; }
+  ui.editingProfileId=null; save(); renderList(); toast('Profile deleted');
+}
+function exportBackup(){
+  const ts=new Date().toISOString().slice(0,16).replace('T','-').replace(':','-');
+  const payload=JSON.stringify({exportedAt:new Date().toISOString(),version:1,data},null,2);
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([payload],{type:'application/json'}));
+  a.download='tenant-screening-backup-'+ts+'.json'; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500); toast('Backup exported');
+}
+function importBackup(file){
+  if(!file) return;
+  const reader=new FileReader(); reader.onload=e=>{
+    try{
+      const parsed=JSON.parse(e.target.result);
+      const imported=parsed.data||parsed;
+      if(!imported.screenings||!Array.isArray(imported.screenings)) throw new Error('Unrecognised format');
+      if(!confirm('This will replace all current data (screenings and owner profiles) with the backup. Continue?')) return;
+      data=imported; if(!data.owner) data.owner={name:'',address:'',phone:'',email:''}; if(!data.ownerProfiles) data.ownerProfiles=[];
+      save(); ui={view:'home',id:null,confirmDelete:null,ownerOpen:false,ownerTab:'edit'}; render(); toast('Backup imported — '+(data.screenings.length)+' screening'+(data.screenings.length!==1?'s':'')+' loaded');
+    }catch(err){ toast('Could not read backup: '+err.message); }
+  }; reader.readAsText(file);
 }
 
 /* ======================= UI: EDITOR ======================= */
@@ -302,6 +449,8 @@ function renderMain(){
     return;
   }
   if(ui.view==='report'){ renderReport(el); return; }
+  if(ui.view==='agreement'){ renderAgreement(el); return; }
+  if(ui.view==='notices'){ renderNotices(el); return; }
   renderEditor(el);
 }
 function renderEditor(el){
@@ -435,6 +584,17 @@ function outcomeHtml(s){
     if(e.flags.length||e.reasons.length) h+=`<div class="field"><label>Applicant's response to concerns (offer one before deciding)</label><textarea rows="2" onchange="setv('applicantResponse',this.value)">${esc(s.applicantResponse)}</textarea></div>`;
     h+=`</div>`;
   }
+  if(e.final==='met'){
+    const ag=s.agreement; const hasLease=!!(ag&&ag.generatedAt);
+    h+=`<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)"><div class="sec-no">Next step</div>
+      <h4 style="margin:4px 0 6px;font-family:'Source Serif 4',serif">Applicant meets criteria — prepare the lease</h4>
+      <p class="hint">Generate the Ontario Standard Lease (Form 2229E) pre-filled with applicant and property details.</p>
+      ${hasLease?`<span class="hint">Lease generated ${esc(fmtDT(ag.generatedAt))}. </span>`:''}
+      <div class="actions"><button class="primary" onclick="ui.view='agreement';render();window.scrollTo(0,0)">${hasLease?'Edit lease agreement':'Generate lease agreement →'}</button></div></div>`;
+  }
+  h+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"><div class="sec-no">If a problem arises during the tenancy</div>
+    <p class="hint">Notices help you serve the right LTB form — N4 for unpaid rent, N5 for damage, N12 to move family in, and more.</p>
+    <div class="actions"><button onclick="ui.view='notices';ui.noticeForm=null;ui.noticeQ1='';ui.noticeQ2='';render();window.scrollTo(0,0)">LTB Notices wizard →</button></div></div>`;
   return h;
 }
 
@@ -1871,6 +2031,880 @@ if(typeof window.addEventListener==='function'){
     if(d.ok){ s.ackAt=nowISO(); save(); render(); toast('Rent Roll confirmed it received the result.'); }
     else toast('Rent Roll could not import it: '+(d.message||'unknown reason'));
   });
+}
+
+/* ======================= AGREEMENT (Ontario Standard Lease) ======================= */
+function setAgreement(field, val){
+  const s=cur(); if(!s) return;
+  if(!s.agreement) s.agreement={};
+  const ag=s.agreement;
+  // defaults
+  const D={termType:'fixed',termEnd:'',rentDay:'1',rentMethod:'',rentPayableTo:'',firstRentDate:'',firstRentAmount:'',includesHeat:false,includesWater:false,includesElectricity:false,otherServices:'',parkingSpaces:'0',parkingCost:'',parkingDescription:'',storageDescription:'',unitOther:'',landlordNoticeAddress:'',coLandlord:'',additionalTenants:'',hasDiscount:false,discountAmount:'',discountDescription:'',depositHeld:false,depositAmount:'',depositDate:'',keyDeposit:false,keyDepositAmount:'',keyReplacementCost:'',smokingAllowed:false,smokingDetails:'',insuranceRequired:true,changesNotes:'',additionalTerms:'',generatedAt:null};
+  Object.keys(D).forEach(k=>{ if(!(k in ag)) ag[k]=D[k]; });
+  ag[field]=val; s.updatedAt=nowISO(); save(); refreshAgreementLive();
+}
+function refreshAgreementLive(){
+  const s=cur(); if(!s) return; const ag=s.agreement||{};
+  const show=(id,v)=>{ const el=document.getElementById(id); if(el) el.style.display=v?'':'none'; };
+  show('ag-term-end', ag.termType==='fixed');
+  show('ag-discount-detail', ag.hasDiscount);
+  show('ag-deposit-detail', ag.depositHeld);
+  show('ag-keydeposit-detail', ag.keyDeposit);
+  show('ag-smoking-detail', ag.smokingAllowed);
+  show('ag-parking-cost', Number(ag.parkingSpaces||0)>0);
+}
+function renderAgreement(el){
+  const s=cur(); if(!s){ el.innerHTML='<p>No screening selected.</p>'; return; }
+  // ensure all defaults present without triggering a save
+  if(!s.agreement) s.agreement={};
+  const D={termType:'fixed',termEnd:'',rentDay:'1',rentMethod:'',rentPayableTo:'',firstRentDate:'',firstRentAmount:'',includesHeat:false,includesWater:false,includesElectricity:false,otherServices:'',parkingSpaces:'0',parkingCost:'',parkingDescription:'',storageDescription:'',unitOther:'',landlordNoticeAddress:'',coLandlord:'',additionalTenants:'',hasDiscount:false,discountAmount:'',discountDescription:'',depositHeld:false,depositAmount:'',depositDate:'',keyDeposit:false,keyDepositAmount:'',keyReplacementCost:'',smokingAllowed:false,smokingDetails:'',insuranceRequired:true,changesNotes:'',additionalTerms:'',generatedAt:null};
+  Object.keys(D).forEach(k=>{ if(!(k in s.agreement)) s.agreement[k]=D[k]; });
+  const ag=s.agreement; const o=data.owner; const a=s.applicant; const r=s.rental;
+  const ownerMissing=!(o.name&&o.address);
+  const chk=(k,lbl)=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin:4px 0"><input type="checkbox" ${ag[k]?'checked':''} onchange="setAgreement('${k}',this.checked)" style="width:auto"> ${lbl}</label>`;
+  const sel=(k,opts)=>`<select onchange="setAgreement('${k}',this.value)">${opts.map(([v,t])=>`<option value="${v}" ${String(ag[k])===String(v)?'selected':''}>${t}</option>`).join('')}</select>`;
+  el.innerHTML=`
+  <div class="actions noprint"><button onclick="ui.view='edit';goStep(5);render()">← Back to result</button><button class="primary" onclick="downloadLeasePdf()">Download PDF (Form 2229E)</button></div>
+  <div class="panel">
+    <div class="sec-no">Ontario Standard Lease · Form 2229E (December 2020) · O. Reg. 9/18</div>
+    <h2 style="font-size:22px;margin:2px 0 6px">Residential Tenancy Agreement</h2>
+    <p class="hint">${esc(r.property||'No property entered')} · ${a.name||'Unnamed applicant'}</p>
+    <p class="hint" style="margin-top:2px">Official blank form: <a href="https://forms.mgcs.gov.on.ca/en/dataset/047-2229" target="_blank" rel="noopener noreferrer">forms.mgcs.gov.on.ca/en/dataset/047-2229</a></p>
+    ${ownerMissing?`<div class="note" style="margin-top:10px">Owner profile is incomplete — landlord fields will be blank. <button class="small" onclick="ui.ownerOpen=true;render()">Fill in owner details</button></div>`:''}
+
+    <h3 style="margin-top:22px">Section 1 — Parties to the Agreement</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+      <div>
+        <div class="sec-no" style="margin-bottom:6px">Landlord</div>
+        <div><b>${esc(o.name||'—')}</b></div>
+        <div style="font-size:13px;color:var(--muted)">${esc(o.address||'—')}</div>
+        <div style="font-size:13px;color:var(--muted)">${[o.phone,o.email].filter(Boolean).map(esc).join(' · ')||'—'}</div>
+        <p class="hint" style="margin-top:4px"><button class="small" onclick="ui.ownerOpen=true;render()">Edit owner profile ↑</button></p>
+        <div class="field" style="margin-top:8px"><label>Co-landlord name (if any)</label><input type="text" value="${esc(ag.coLandlord||'')}" placeholder="Optional" onchange="setAgreement('coLandlord',this.value)"></div>
+      </div>
+      <div>
+        <div class="sec-no" style="margin-bottom:6px">Tenant</div>
+        <div><b>${esc(a.name||'—')}</b></div>
+        <div style="font-size:13px;color:var(--muted)">${esc(a.email||'—')}</div>
+        <div style="font-size:13px;color:var(--muted)">${esc(a.phone||'—')}</div>
+        <p class="hint" style="margin-top:4px">From applicant section (Step 1).</p>
+        <div class="field" style="margin-top:8px"><label>Additional tenants (names, one per line)</label><textarea rows="2" placeholder="Optional" onchange="setAgreement('additionalTenants',this.value)">${esc(ag.additionalTenants||'')}</textarea></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:20px">Section 2 — Rental Unit</h3>
+    <p style="margin:4px 0 2px">${esc(r.property||'—')}</p>
+    <p class="hint">Address entered in Step 1 of screening.</p>
+    <div class="row" style="margin-top:8px">
+      <div class="field"><label>Parking space(s) included</label>${sel('parkingSpaces',[['0','None'],['1','1 space'],['2','2 spaces'],['3','3 spaces']])}</div>
+      <div class="field" id="ag-parking-cost" style="display:${Number(ag.parkingSpaces||0)>0?'':'none'}"><label>Parking cost if not in rent ($)</label><input type="number" value="${esc(ag.parkingCost||'')}" min="0" step="0.01" placeholder="0 if included" onchange="setAgreement('parkingCost',this.value)"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Parking description (stall #, etc.)</label><input type="text" value="${esc(ag.parkingDescription||'')}" placeholder="e.g. Stall 3, outdoor" onchange="setAgreement('parkingDescription',this.value)"></div>
+      <div class="field"><label>Storage locker / unit</label><input type="text" value="${esc(ag.storageDescription||'')}" placeholder="e.g. Locker B2, or None" onchange="setAgreement('storageDescription',this.value)"></div>
+    </div>
+    <div class="field"><label>Other spaces included (e.g. yard, garage)</label><input type="text" value="${esc(ag.unitOther||'')}" placeholder="Optional" onchange="setAgreement('unitOther',this.value)"></div>
+
+    <h3 style="margin-top:20px">Section 3 — Contact Information for Landlord</h3>
+    <p class="hint">Address where the landlord can receive notices from the tenant. Defaults to the owner profile address.</p>
+    <div class="field"><label>Address for serving notices</label><input type="text" value="${esc(ag.landlordNoticeAddress||o.address||'')}" placeholder="Street address for notices" onchange="setAgreement('landlordNoticeAddress',this.value)"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><div class="sec-no" style="margin-bottom:4px">Phone</div><div style="font-size:13px">${esc(o.phone||'—')}</div></div>
+      <div><div class="sec-no" style="margin-bottom:4px">Email</div><div style="font-size:13px">${esc(o.email||'—')}</div></div>
+    </div>
+    <p class="hint" style="margin-top:4px">Phone and email are from the owner profile.</p>
+
+    <h3 style="margin-top:20px">Section 4 — Term of Tenancy Agreement</h3>
+    <div class="row">
+      <div class="field"><label>Start date</label><input type="date" value="${esc(r.moveIn||'')}" onchange="setv('rental.moveIn',this.value)"></div>
+      <div class="field"><label>Tenancy type</label>${sel('termType',[['fixed','Fixed term — ends on end date'],['monthly','Month-to-month — continues until notice']])}</div>
+    </div>
+    <div class="field" id="ag-term-end" style="display:${ag.termType==='fixed'?'':'none'}">
+      <label>End date (fixed term)</label><input type="date" value="${esc(ag.termEnd||'')}" onchange="setAgreement('termEnd',this.value)">
+      <p class="hint">After the fixed term ends, the tenancy automatically becomes month-to-month unless both parties agree to a new fixed term.</p>
+    </div>
+
+    <h3 style="margin-top:20px">Section 5 — Rent</h3>
+    <div class="row">
+      <div class="field"><label>Base rent ($/month)</label><input type="number" value="${esc(r.rent||'')}" min="0" step="0.01" onchange="setv('rental.rent',this.value)"></div>
+      <div class="field"><label>Due on day of month</label><input type="number" value="${esc(ag.rentDay||'1')}" min="1" max="31" onchange="setAgreement('rentDay',this.value)"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Payment method</label><input type="text" value="${esc(ag.rentMethod||'')}" placeholder="e.g. e-Transfer, cheque, cash" onchange="setAgreement('rentMethod',this.value)"></div>
+      <div class="field"><label>Payable to (name)</label><input type="text" value="${esc(ag.rentPayableTo||o.name||'')}" placeholder="Landlord name or company" onchange="setAgreement('rentPayableTo',this.value)"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>First payment date</label><input type="date" value="${esc(ag.firstRentDate||r.moveIn||'')}" onchange="setAgreement('firstRentDate',this.value)"></div>
+      <div class="field"><label>First payment amount ($)</label><input type="number" value="${esc(ag.firstRentAmount||r.rent||'')}" min="0" step="0.01" placeholder="May differ if partial month" onchange="setAgreement('firstRentAmount',this.value)"></div>
+    </div>
+
+    <h3 style="margin-top:20px">Section 6 — Services and Utilities</h3>
+    <p class="hint">Check each item that is included in the rent amount above.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px 24px;margin:6px 0">
+      ${[['includesHeat','Heat'],['includesWater','Water and hot water'],['includesElectricity','Electricity']].map(([k,lbl])=>chk(k,lbl)).join('')}
+    </div>
+    <div class="field" style="margin-top:8px"><label>Other services included (e.g. internet, air conditioning)</label><input type="text" value="${esc(ag.otherServices||'')}" placeholder="None, or describe" onchange="setAgreement('otherServices',this.value)"></div>
+
+    <h3 style="margin-top:20px">Section 7 — Rent Discounts</h3>
+    <p class="hint">A rent discount reduces what the tenant pays. The discount amount is included in the base rent above; describe it here if applicable.</p>
+    ${chk('hasDiscount','A rent discount applies')}
+    <div id="ag-discount-detail" style="display:${ag.hasDiscount?'':'none'}">
+      <div class="row" style="margin-top:6px">
+        <div class="field"><label>Discount amount ($/month)</label><input type="number" value="${esc(ag.discountAmount||'')}" min="0" step="0.01" onchange="setAgreement('discountAmount',this.value)"></div>
+        <div class="field"><label>Discount description</label><input type="text" value="${esc(ag.discountDescription||'')}" placeholder="e.g. Lawn maintenance discount" onchange="setAgreement('discountDescription',this.value)"></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:20px">Section 8 — Rent Deposit</h3>
+    <p class="hint">A landlord may collect a last month's rent deposit. It earns annual interest at the rent increase guideline rate.</p>
+    ${chk('depositHeld','A rent deposit has been collected')}
+    <div id="ag-deposit-detail" style="display:${ag.depositHeld?'':'none'}">
+      <div class="row" style="margin-top:6px">
+        <div class="field"><label>Deposit amount ($)</label><input type="number" value="${esc(ag.depositAmount||r.rent||'')}" min="0" step="0.01" onchange="setAgreement('depositAmount',this.value)"></div>
+        <div class="field"><label>Date deposit paid</label><input type="date" value="${esc(ag.depositDate||'')}" onchange="setAgreement('depositDate',this.value)"></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:20px">Section 9 — Key Deposit</h3>
+    <p class="hint">A key deposit can be collected only if it does not exceed the cost to replace the key. It must be returned when the tenancy ends.</p>
+    ${chk('keyDeposit','A key deposit has been collected')}
+    <div id="ag-keydeposit-detail" style="display:${ag.keyDeposit?'':'none'}">
+      <div class="row" style="margin-top:6px">
+        <div class="field"><label>Deposit amount ($)</label><input type="number" value="${esc(ag.keyDepositAmount||'')}" min="0" step="0.01" onchange="setAgreement('keyDepositAmount',this.value)"></div>
+        <div class="field"><label>Cost to replace key ($)</label><input type="number" value="${esc(ag.keyReplacementCost||'')}" min="0" step="0.01" onchange="setAgreement('keyReplacementCost',this.value)"></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:20px">Section 10 — Smoking</h3>
+    ${sel('smokingAllowed',[['false','Smoking and vaping are not permitted anywhere on the property'],['true','Smoking is permitted — describe where below']])}
+    <div id="ag-smoking-detail" style="display:${ag.smokingAllowed?'':'none'}">
+      <div class="field" style="margin-top:8px"><label>Where smoking/vaping is permitted</label><input type="text" value="${esc(ag.smokingDetails||'')}" placeholder="e.g. Outdoor designated area only" onchange="setAgreement('smokingDetails',this.value)"></div>
+    </div>
+
+    <h3 style="margin-top:20px">Section 11 — Tenant's Insurance</h3>
+    ${chk('insuranceRequired','Tenant is required to obtain and maintain liability insurance throughout the tenancy')}
+    <p class="hint">Landlord insurance does not cover the tenant's possessions. Even if not required, insurance is strongly recommended for tenants.</p>
+
+    <h3 style="margin-top:20px">Section 12 — Changes to the Rental Unit</h3>
+    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin:6px 0">Under the <i>Residential Tenancies Act</i>, a tenant may install decorative items such as pictures without the landlord's permission, but may not make other alterations, additions or repairs without consent. The tenant must restore the unit to the original condition on vacating, except for reasonable wear and tear.</p>
+    <div class="field"><label>Additional terms about changes (optional)</label><input type="text" value="${esc(ag.changesNotes||'')}" placeholder="e.g. Tenant may paint with landlord approval and must repaint on vacating" onchange="setAgreement('changesNotes',this.value)"></div>
+
+    <h3 style="margin-top:20px">Section 13 — Maintenance and Repairs</h3>
+    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin:6px 0">The landlord is responsible for maintaining the unit in a good state of repair, complying with health, safety, housing, and maintenance standards. The tenant must keep the unit clean and repair damage caused by the tenant or their guests. The tenant must notify the landlord of any repairs needed promptly.</p>
+
+    <h3 style="margin-top:20px">Section 14 — Assignment and Subletting</h3>
+    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin:6px 0">The tenant may assign or sublet the rental unit only with the landlord's consent. The landlord may not arbitrarily or unreasonably withhold consent to a sublet. If the landlord does not respond within 7 days of a written sublet request, the landlord is deemed to have given consent.</p>
+
+    <h3 style="margin-top:20px">Section 15 — Additional Terms</h3>
+    <p class="hint">Both parties agree to the additional terms below. Additional terms cannot take away any rights or responsibilities under the <i>Residential Tenancies Act, 2006</i>. Any such terms are void. Both parties must sign or initial any handwritten additions.</p>
+    <div class="field"><textarea rows="5" placeholder="e.g. No pets. Tenant responsible for snow removal on front walk. Tenant may not sublet." onchange="setAgreement('additionalTerms',this.value)">${esc(ag.additionalTerms||'')}</textarea></div>
+
+    <h3 style="margin-top:20px">Section 16 — Changes to this Agreement</h3>
+    <p style="font-size:13px;color:var(--muted);line-height:1.5;margin:6px 0">Changes to this agreement can only be made if both parties agree. Any agreed changes must be made in writing and signed by both parties. A change to this agreement that takes away a right or responsibility under the <i>Residential Tenancies Act, 2006</i> is void.</p>
+
+    <h3 style="margin-top:20px">Section 17 — Signatures</h3>
+    <p class="hint">Both parties must sign. The landlord must provide the tenant with a copy of the signed lease within 21 days. Each party must retain a copy.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:10px">
+      <div>
+        <div class="sec-no">Landlord</div>
+        <div style="border-bottom:1px solid var(--ink);height:48px;margin:10px 0 4px"></div>
+        <div style="font-size:13px">${esc(o.name||'____________________')}</div>
+        <div style="font-size:12px;color:var(--muted)">Date: ____________________</div>
+        ${ag.coLandlord?`<div style="margin-top:10px"><div class="sec-no">Co-landlord</div><div style="border-bottom:1px solid var(--ink);height:48px;margin:10px 0 4px"></div><div style="font-size:13px">${esc(ag.coLandlord)}</div><div style="font-size:12px;color:var(--muted)">Date: ____________________</div></div>`:''}
+      </div>
+      <div>
+        <div class="sec-no">Tenant</div>
+        <div style="border-bottom:1px solid var(--ink);height:48px;margin:10px 0 4px"></div>
+        <div style="font-size:13px">${esc(a.name||'____________________')}</div>
+        <div style="font-size:12px;color:var(--muted)">Date: ____________________</div>
+        ${ag.additionalTenants?(ag.additionalTenants.split('\n').filter(n=>n.trim()).map(n=>`<div style="margin-top:10px"><div class="sec-no">Additional tenant</div><div style="border-bottom:1px solid var(--ink);height:48px;margin:10px 0 4px"></div><div style="font-size:13px">${esc(n.trim())}</div><div style="font-size:12px;color:var(--muted)">Date: ____________________</div></div>`).join('')):''}
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:24px">This tool generates a draft based on Form 2229E (Ontario Standard Lease, December 2020, O. Reg. 9/18 under the <i>Residential Tenancies Act, 2006</i>). It does not constitute legal advice. Both parties must sign and each must receive a copy. Official blank form: <a href="https://forms.mgcs.gov.on.ca/en/dataset/047-2229" target="_blank" rel="noopener noreferrer">forms.mgcs.gov.on.ca/en/dataset/047-2229</a></div>
+    <div class="actions noprint" style="margin-top:16px"><button class="primary" onclick="downloadLeasePdf()">Download PDF (Form 2229E)</button><button onclick="window.print()">Print</button></div>
+  </div>`;
+  refreshAgreementLive();
+}
+
+function buildLeasePdf(){
+  const s=cur(); if(!s) return null;
+  const ag=s.agreement||{}; const o=data.owner; const a=s.applicant; const r=s.rental;
+  const J=window.jspdf&&window.jspdf.jsPDF; if(!J) return null;
+  const doc=new J({unit:'pt',format:'letter'});
+  const W=612,H=792,ML=36,MR=36,MT=36,CW=W-ML-MR; let y=MT;
+
+  // Palette matching Ontario government form aesthetic
+  const NAVY=[0,51,102], BLUE=[0,84,166], LTBLUE=[220,234,248], GRAY=[100,100,100],
+        LGRAY=[235,235,235], FGRAY=[247,247,247], BLACK=[30,30,30], WHITE=[255,255,255],
+        BORDER=[170,170,170], GREEN=[0,130,60];
+
+  const need=h=>{ if(y+h>H-52){ doc.addPage(); y=MT; } };
+
+  // --- drawing helpers ---
+  function setFont(f,style,sz,col){
+    doc.setFont(f||'helvetica',style||'normal'); doc.setFontSize(sz||10);
+    if(col) doc.setTextColor.apply(doc,col); else doc.setTextColor.apply(doc,BLACK);
+  }
+  function fillRect(x,fx,fy,fw,fh,col){ doc.setFillColor.apply(doc,col); doc.rect(fx,fy,fw,fh,'F'); }
+  function strokeRect(fx,fy,fw,fh,col,lw){
+    doc.setDrawColor.apply(doc,col||BORDER); doc.setLineWidth(lw||0.4); doc.rect(fx,fy,fw,fh,'S');
+  }
+
+  // Draw a labelled form field box, returns height used
+  function formBox(lbl,val,bx,by,bw,bh){
+    doc.setFillColor.apply(doc,FGRAY); doc.rect(bx,by,bw,bh,'F');
+    doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5); doc.rect(bx,by,bw,bh,'S');
+    setFont('helvetica','normal',7,GRAY); doc.text(pdfClean(lbl),bx+3,by+8);
+    setFont('helvetica','normal',9.5,BLACK);
+    const lines=doc.splitTextToSize(pdfClean(val||''),bw-6);
+    lines.slice(0,Math.floor((bh-12)/11)).forEach((l,i)=>doc.text(l,bx+3,by+19+i*11));
+  }
+
+  // Checkbox: draws box + X or check if ticked
+  function checkbox(cx,cy,ticked,lbl){
+    doc.setFillColor.apply(doc,WHITE); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5);
+    doc.rect(cx,cy-7,8,8,'FD');
+    if(ticked){ doc.setDrawColor.apply(doc,NAVY); doc.setLineWidth(1.2);
+      doc.line(cx+1,cy-3,cx+3,cy-1); doc.line(cx+3,cy-1,cx+7,cy-7); }
+    setFont('helvetica','normal',9,BLACK); doc.text(pdfClean(lbl),cx+11,cy);
+  }
+
+  // Section header bar with number badge
+  function sectionHeader(num,title){
+    need(30); y+=8;
+    doc.setFillColor.apply(doc,NAVY); doc.rect(ML,y,CW,16,'F');
+    // number badge
+    doc.setFillColor.apply(doc,BLUE); doc.rect(ML,y,20,16,'F');
+    setFont('helvetica','bold',9,WHITE); doc.text(String(num),ML+10,y+11,{align:'center'});
+    setFont('helvetica','bold',9,WHITE); doc.text(pdfClean(title),ML+26,y+11);
+    y+=22;
+  }
+
+  // Statutory note text (gray italic)
+  function note(str){
+    const lines=doc.splitTextToSize(pdfClean(str),CW);
+    setFont('helvetica','italic',7.5,GRAY);
+    lines.forEach(l=>{ need(10); doc.text(l,ML,y); y+=10; });
+    y+=2;
+  }
+
+  // ====================== COVER PAGE ======================
+  // Ontario wordmark bar
+  doc.setFillColor.apply(doc,NAVY); doc.rect(0,0,W,8,'F');
+  doc.setFillColor.apply(doc,BLUE); doc.rect(0,8,W,3,'F');
+
+  // Title block
+  y=30;
+  doc.setFillColor.apply(doc,LTBLUE); doc.rect(ML,y,CW,80,'F');
+  doc.setDrawColor.apply(doc,NAVY); doc.setLineWidth(1); doc.rect(ML,y,CW,80,'S');
+  // Left: form ID
+  setFont('helvetica','bold',8,NAVY); doc.text('ONTARIO',ML+8,y+14);
+  setFont('helvetica','normal',7,GRAY); doc.text('Government of Ontario',ML+8,y+22);
+  doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.3); doc.line(ML+80,y+6,ML+80,y+74);
+  // Centre: title
+  setFont('helvetica','bold',16,NAVY); doc.text('Standard Form of Lease',W/2,y+26,{align:'center'});
+  setFont('helvetica','normal',10,BLACK); doc.text('(Residential Tenancy Agreement)',W/2,y+40,{align:'center'});
+  setFont('helvetica','normal',8,GRAY);
+  doc.text('Residential Tenancies Act, 2006  |  Ontario Regulation 9/18',W/2,y+52,{align:'center'});
+  doc.text('Form 2229E  (December 2020)',W/2,y+63,{align:'center'});
+  // Right: date prepared
+  setFont('helvetica','normal',7.5,GRAY); doc.text(pdfClean('Prepared: '+fmtDate(nowISO())),W-MR-4,y+14,{align:'right'});
+  doc.text(pdfClean('Ref: '+s.id.toUpperCase()),W-MR-4,y+24,{align:'right'});
+  y+=92;
+
+  // Statutory preamble box
+  doc.setFillColor(250,250,245); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.4);
+  doc.rect(ML,y,CW,44,'FD');
+  setFont('helvetica','bold',8,NAVY); doc.text('About this Lease',ML+6,y+10);
+  setFont('helvetica','normal',7.5,GRAY);
+  const preamble='This standard lease is required for most private residential tenancies in Ontario entered into on or after April 30, 2018. '+
+    'If a landlord and tenant agree to additional rules or terms, they must not contradict or take away any right or responsibility under the '+
+    'Residential Tenancies Act, 2006. Landlords must provide a copy of the signed lease within 21 days.';
+  doc.splitTextToSize(pdfClean(preamble),CW-12).forEach((l,i)=>doc.text(l,ML+6,y+20+i*9));
+  y+=52;
+
+  // ====================== SECTION 1 — PARTIES ======================
+  sectionHeader(1,'Parties to the Agreement');
+  need(88);
+  const hw2=(CW-8)/2;
+  // Landlord box
+  doc.setFillColor.apply(doc,FGRAY); doc.rect(ML,y,hw2,82,'F');
+  doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5); doc.rect(ML,y,hw2,82,'S');
+  doc.setFillColor.apply(doc,LTBLUE); doc.rect(ML,y,hw2,13,'F');
+  setFont('helvetica','bold',8,NAVY); doc.text('LANDLORD',ML+4,y+9);
+  setFont('helvetica','bold',10,BLACK); doc.text(pdfClean(o.name||''),ML+4,y+23);
+  setFont('helvetica','normal',8.5,GRAY);
+  [o.address,o.phone,o.email].filter(Boolean).forEach((l,i)=>{ const lines=doc.splitTextToSize(pdfClean(l),hw2-8); lines.forEach((ln,li)=>doc.text(ln,ML+4,y+34+i*13+li*10)); });
+  if(ag.coLandlord){ setFont('helvetica','italic',8,GRAY); doc.text(pdfClean('Also: '+ag.coLandlord),ML+4,y+73); }
+  // Tenant box
+  const tx=ML+hw2+8;
+  doc.setFillColor.apply(doc,FGRAY); doc.rect(tx,y,hw2,82,'F');
+  doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5); doc.rect(tx,y,hw2,82,'S');
+  doc.setFillColor.apply(doc,LTBLUE); doc.rect(tx,y,hw2,13,'F');
+  setFont('helvetica','bold',8,NAVY); doc.text('TENANT',tx+4,y+9);
+  setFont('helvetica','bold',10,BLACK); doc.text(pdfClean(a.name||''),tx+4,y+23);
+  setFont('helvetica','normal',8.5,GRAY);
+  [a.email,a.phone].filter(Boolean).forEach((l,i)=>doc.text(pdfClean(l),tx+4,y+34+i*13));
+  if(ag.additionalTenants){ setFont('helvetica','italic',8,GRAY);
+    ag.additionalTenants.split('\n').filter(n=>n.trim()).forEach((n,i)=>doc.text(pdfClean('Also: '+n.trim()),tx+4,y+60+i*10)); }
+  y+=88;
+
+  // ====================== SECTION 2 — RENTAL UNIT ======================
+  sectionHeader(2,'Rental Unit');
+  need(40);
+  formBox('Address of rental unit (street number and name, unit number, municipality, postal code)',r.property||'',ML,y,CW,28); y+=34;
+  const ps=Number(ag.parkingSpaces||0);
+  const pw=(CW-8)/3;
+  formBox('Parking spaces included',ps>0?ps+' space'+(ps>1?'s':''):'None',ML,y,pw,24);
+  formBox('Parking description / stall #',ag.parkingDescription||'n/a',ML+pw+4,y,pw,24);
+  formBox('Storage locker / unit',ag.storageDescription||'None',ML+pw*2+8,y,pw,24);
+  y+=30;
+  if(ag.unitOther){ formBox('Other spaces or facilities included',ag.unitOther,ML,y,CW,22); y+=28; }
+
+  // ====================== SECTION 3 — CONTACT INFORMATION ======================
+  sectionHeader(3,'Contact Information for Landlord');
+  need(42);
+  formBox('Address for delivery of notices to landlord (if different from rental unit)',ag.landlordNoticeAddress||o.address||'',ML,y,CW,28); y+=34;
+  const cw3=(CW-8)/2;
+  formBox('Landlord phone number',o.phone||'',ML,y,cw3,22);
+  formBox('Landlord email address',o.email||'',ML+cw3+8,y,cw3,22);
+  y+=28;
+
+  // ====================== SECTION 4 — TERM ======================
+  sectionHeader(4,'Term of Tenancy Agreement');
+  need(52);
+  const tw=(CW-8)/2;
+  formBox('Tenancy start date',r.moveIn?fmtDate(r.moveIn):'',ML,y,tw,24); y+=30;
+  note('After a fixed-term tenancy ends it automatically becomes a month-to-month tenancy unless a new fixed-term agreement is entered into.');
+  need(30);
+  checkbox(ML,y,ag.termType!=='monthly','Fixed term — ends on:'); y+=4;
+  if(ag.termType!=='monthly'){ need(24); formBox('End date of fixed term',ag.termEnd?fmtDate(ag.termEnd):'',ML+14,y,120,20); y+=26; }
+  need(14); checkbox(ML,y,ag.termType==='monthly','Month-to-month — continues until notice given by either party'); y+=16;
+
+  // ====================== SECTION 5 — RENT ======================
+  sectionHeader(5,'Rent');
+  need(100);
+  const r5w=(CW-12)/4;
+  formBox('Base rent amount (per month)',money(r.rent),ML,y,r5w,24);
+  formBox('Rent due on (day of month)',ag.rentDay?'Day '+ag.rentDay:'Day 1',ML+r5w+4,y,r5w,24);
+  formBox('Payment method',ag.rentMethod||'',ML+(r5w+4)*2,y,r5w,24);
+  formBox('Rent payable to',ag.rentPayableTo||o.name||'',ML+(r5w+4)*3,y,r5w,24);
+  y+=30;
+  const frd=ag.firstRentDate||r.moveIn||''; const fra=ag.firstRentAmount||r.rent||'';
+  formBox('Date of first rent payment',frd?fmtDate(frd):'',ML,y,tw,24);
+  formBox('Amount of first payment (may differ if partial month)',money(fra),ML+tw+8,y,tw,24);
+  y+=30;
+
+  // ====================== SECTION 6 — SERVICES ======================
+  sectionHeader(6,'Services and Utilities');
+  note('Check all that are included in the rent. Anything not checked is the tenant\'s responsibility to arrange and pay for separately.');
+  need(56);
+  y+=2;
+  [['Heat',ag.includesHeat],['Water and hot water',ag.includesWater],['Electricity',ag.includesElectricity]].forEach(([lbl,inc])=>{
+    checkbox(ML,y,inc,lbl+(inc?' — included in rent':' — tenant arranges separately')); y+=14;
+  });
+  if(ps>0&&ag.parkingCost&&Number(ag.parkingCost)>0){
+    need(14); formBox('Parking charge (separate from rent)',money(ag.parkingCost)+'/month',ML,y,CW,20); y+=26;
+  }
+  if(ag.otherServices){ need(24); formBox('Other services included in rent',ag.otherServices,ML,y,CW,20); y+=26; }
+  y+=4;
+
+  // ====================== SECTION 7 — RENT DISCOUNTS ======================
+  sectionHeader(7,'Rent Discounts');
+  note('A rent discount reduces the amount the tenant must pay. Any discount must be described here. Discounts are already reflected in the base rent in Section 5.');
+  need(30);
+  checkbox(ML,y,!ag.hasDiscount,'No rent discount'); y+=14;
+  checkbox(ML,y,!!ag.hasDiscount,'A rent discount applies:'); y+=4;
+  if(ag.hasDiscount){
+    const dw=(CW-8)/2;
+    need(26); formBox('Discount amount',money(ag.discountAmount||'')+'/month',ML+14,y,dw,22);
+    formBox('Description of discount',ag.discountDescription||'',ML+14+dw+8,y,dw-14,22); y+=28;
+  } else { y+=8; }
+
+  // ====================== SECTION 8 — RENT DEPOSIT ======================
+  sectionHeader(8,'Rent Deposit');
+  note('A landlord can collect a last month\'s rent deposit. It must be applied to the last month\'s rent. Interest accrues annually at the rent increase guideline rate.');
+  need(38);
+  checkbox(ML,y,!ag.depositHeld,'No rent deposit collected'); y+=14;
+  checkbox(ML,y,!!ag.depositHeld,'A rent deposit has been collected'); y+=4;
+  if(ag.depositHeld){
+    const dw=(CW-8)/2;
+    need(26); formBox('Deposit amount',money(ag.depositAmount||r.rent||''),ML+14,y,dw,22);
+    formBox('Date deposit paid',ag.depositDate?fmtDate(ag.depositDate):'',ML+14+dw+8,y,dw-14,22); y+=28;
+  } else { y+=8; }
+
+  // ====================== SECTION 9 — KEY DEPOSIT ======================
+  sectionHeader(9,'Key Deposit');
+  note('A key deposit can be charged only if it does not exceed the cost to replace the key, fob, or card. It must be returned when the tenancy ends.');
+  need(38);
+  checkbox(ML,y,!ag.keyDeposit,'No key deposit collected'); y+=14;
+  checkbox(ML,y,!!ag.keyDeposit,'A key deposit has been collected'); y+=4;
+  if(ag.keyDeposit){
+    const kw=(CW-8)/2;
+    need(26); formBox('Key deposit amount',money(ag.keyDepositAmount||''),ML+14,y,kw,22);
+    formBox('Cost to replace key / fob',money(ag.keyReplacementCost||''),ML+14+kw+8,y,kw-14,22); y+=28;
+  } else { y+=8; }
+
+  // ====================== SECTION 10 — SMOKING ======================
+  sectionHeader(10,'Smoking');
+  need(44);
+  y+=2;
+  checkbox(ML,y,!ag.smokingAllowed,'Smoking and vaping are not permitted anywhere on the property (including balconies, patios, indoor common areas)'); y+=14;
+  checkbox(ML,y,!!ag.smokingAllowed,'Smoking/vaping is permitted in the following locations only:'); y+=4;
+  if(ag.smokingAllowed){ need(22); formBox('Where smoking/vaping is permitted',ag.smokingDetails||'',ML+14,y,CW-14,20); y+=26; }
+  else { y+=8; }
+
+  // ====================== SECTION 11 — TENANT INSURANCE ======================
+  sectionHeader(11,"Tenant's Insurance");
+  need(30); y+=2;
+  checkbox(ML,y,!!ag.insuranceRequired,'The tenant is required to obtain and maintain tenant liability insurance throughout the tenancy'); y+=14;
+  checkbox(ML,y,!ag.insuranceRequired,'Tenant insurance is not required'); y+=14;
+  note('Even when not required, tenants are strongly encouraged to purchase contents and liability insurance as the landlord\'s insurance does not cover the tenant\'s belongings or liability.');
+
+  // ====================== SECTION 12 — CHANGES TO UNIT ======================
+  sectionHeader(12,'Changes to the Rental Unit');
+  note('The tenant agrees not to make alterations, decorating, or additions to the rental unit (including changing the locks) without the consent of the landlord. Subject to the Residential Tenancies Act, 2006, if the tenant makes changes without consent, the landlord can require the tenant to undo the changes. When vacating, the tenant must leave the unit as it was at the start of the tenancy, except for reasonable wear and tear.');
+  if(ag.changesNotes){ need(26); formBox('Additional terms regarding changes',ag.changesNotes,ML,y,CW,22); y+=28; }
+
+  // ====================== SECTION 13 — MAINTENANCE ======================
+  sectionHeader(13,'Maintenance and Repairs');
+  note('The landlord is responsible for maintaining the rental property in a good state of repair and fit for habitation, and for complying with health, safety, housing, and maintenance standards, even if the tenant knew of the problems before entering into the tenancy agreement. The tenant is responsible for ordinary cleanliness of the unit and for any damage caused by the wilful or negligent conduct of the tenant or persons permitted in the property.');
+
+  // ====================== SECTION 14 — ASSIGNMENT AND SUBLETTING ======================
+  sectionHeader(14,'Assignment and Subletting');
+  note('The tenant may assign or sublet the rental unit to another person only with the written consent of the landlord. The landlord cannot arbitrarily or unreasonably withhold consent. If the landlord does not respond within 7 days of a written request, the landlord is deemed to have given consent to the sublet.');
+
+  // ====================== SECTION 15 — ADDITIONAL TERMS ======================
+  sectionHeader(15,'Additional Terms (Schedule A)');
+  note('The landlord and tenant may agree to additional terms. These terms cannot take away any right or responsibility under the Residential Tenancies Act, 2006. Both parties must sign or initial any handwritten additions to this section.');
+  need(60);
+  const atText=ag.additionalTerms||'';
+  const atH=Math.min(160,Math.max(50,doc.splitTextToSize(pdfClean(atText||' '),CW-8).length*11+16));
+  doc.setFillColor(255,255,255); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5);
+  doc.rect(ML,y,CW,atH,'FD');
+  setFont('helvetica','normal',7,GRAY); doc.text('Additional terms (if none, leave blank)',ML+3,y+8);
+  if(atText){ setFont('helvetica','normal',9,BLACK);
+    doc.splitTextToSize(pdfClean(atText),CW-8).slice(0,Math.floor((atH-14)/11)).forEach((l,i)=>doc.text(l,ML+3,y+18+i*11)); }
+  y+=atH+6;
+
+  // ====================== SECTION 16 — CHANGES TO AGREEMENT ======================
+  sectionHeader(16,'Changes to this Agreement');
+  note('Changes to this agreement can only be made if both parties agree. Any agreed-upon changes must be written down and signed by both parties. A change that is inconsistent with the Residential Tenancies Act, 2006 is void.');
+
+  // ====================== SECTION 17 — SIGNATURES ======================
+  sectionHeader(17,'Signatures');
+  note('The landlord must provide the tenant with a copy of the signed lease within 21 days. Each party must retain a copy.');
+  y+=4;
+
+  const sigParties=[[o.name,'Landlord'],[a.name,'Tenant']];
+  if(ag.coLandlord) sigParties.splice(1,0,[ag.coLandlord,'Co-landlord']);
+  if(ag.additionalTenants) ag.additionalTenants.split('\n').filter(n=>n.trim()).forEach(n=>sigParties.push([n.trim(),'Additional Tenant']));
+
+  for(let i=0;i<sigParties.length;i+=2){
+    const pair=sigParties.slice(i,i+2); need(80); y+=4;
+    pair.forEach(([name,role],pi)=>{
+      const sx=ML+pi*(hw2+8), sw=hw2;
+      doc.setFillColor.apply(doc,FGRAY); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.5);
+      doc.rect(sx,y,sw,70,'FD');
+      doc.setFillColor.apply(doc,LTBLUE); doc.rect(sx,y,sw,12,'F');
+      setFont('helvetica','bold',8,NAVY); doc.text(pdfClean(role.toUpperCase()),sx+4,y+9);
+      setFont('helvetica','normal',9,BLACK); doc.text(pdfClean(name||''),sx+4,y+24);
+      // signature line
+      doc.setDrawColor(80,80,80); doc.setLineWidth(0.5); doc.line(sx+4,y+46,sx+sw-4,y+46);
+      setFont('helvetica','normal',7,GRAY); doc.text('Signature',sx+4,y+54);
+      // date line
+      doc.line(sx+4,y+66,sx+sw-4,y+66);
+      doc.text('Date (YYYY-MM-DD)',sx+4,y+70.5);
+    });
+    y+=76;
+  }
+
+  // footer note
+  need(28); y+=6;
+  doc.setFillColor(245,248,252); doc.setDrawColor.apply(doc,BORDER); doc.setLineWidth(0.3);
+  doc.rect(ML,y,CW,22,'FD');
+  setFont('helvetica','italic',7.5,GRAY);
+  doc.text(pdfClean('This document was generated from Form 2229E (Ontario Standard Lease, December 2020, O. Reg. 9/18). It does not constitute legal advice.'),ML+4,y+9);
+  doc.text(pdfClean('Official blank form: forms.mgcs.gov.on.ca/en/dataset/047-2229   |   Store securely — contains personal information.'),ML+4,y+18);
+  y+=28;
+
+  // page headers/footers
+  const pages=doc.getNumberOfPages();
+  for(let p=1;p<=pages;p++){
+    doc.setPage(p);
+    // top bar
+    doc.setFillColor.apply(doc,NAVY); doc.rect(0,0,W,8,'F');
+    doc.setFillColor.apply(doc,BLUE); doc.rect(0,8,W,3,'F');
+    // bottom bar
+    doc.setFillColor(240,240,240); doc.rect(0,H-20,W,20,'F');
+    doc.setDrawColor(200,200,200); doc.setLineWidth(0.3); doc.line(0,H-20,W,H-20);
+    setFont('helvetica','normal',7,GRAY);
+    doc.text(pdfClean('Residential Tenancy Agreement — Form 2229E (Dec 2020)  |  '+s.id.toUpperCase()),ML,H-7);
+    doc.text('Page '+p+' of '+pages,W-MR,H-7,{align:'right'});
+  }
+  return doc;
+}
+function downloadLeasePdf(){
+  const s=cur(); if(!s) return;
+  const doc=buildLeasePdf(); if(!doc){ toast('PDF library not loaded (offline?)'); return; }
+  if(!s.agreement) s.agreement={};
+  s.agreement.generatedAt=nowISO(); s.updatedAt=nowISO(); save(); renderList();
+  const nm=(s.applicant.name||'tenant').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  doc.save('lease-'+nm+'-'+todayISO()+'.pdf'); toast('Lease PDF downloaded');
+}
+
+/* ======================= NOTICES (LTB) ======================= */
+const NOTICE_META = {
+  n4:        { short:'N4', title:'Notice to End a Tenancy Early for Non-Payment of Rent', cure:'Tenant has 14 days to pay in full or vacate', officialUrl:'https://tribunalsontario.ca/ltb/forms/' },
+  n5:        { short:'N5', title:'Notice to End Tenancy For Interfering with Others, Damage or Overcrowding', cure:'Tenant has 7 days to remedy the problem (first notice)', officialUrl:'https://tribunalsontario.ca/ltb/forms/' },
+  n7:        { short:'N7', title:'Notice to End Tenancy for Causing Serious Problems', cure:'No remedy period — serious safety issues only', officialUrl:'https://tribunalsontario.ca/ltb/forms/' },
+  'n8-late': { short:'N8', title:'Notice to End Tenancy at End of Term — Persistent Late Payment', cure:'60 days notice; must be last day of rental period', officialUrl:'https://tribunalsontario.ca/ltb/forms/' },
+  'n8-crowd':{ short:'N8', title:'Notice to End Tenancy at End of Term — Too Many Occupants', cure:'60 days notice; must be last day of rental period', officialUrl:'https://tribunalsontario.ca/ltb/forms/' },
+  n12:       { short:'N12', title:'Notice to End Tenancy Because Landlord, Purchaser or Family Member Requires the Unit', cure:'60 days notice + 1 month\'s rent compensation required', officialUrl:'https://tribunalsontario.ca/ltb/forms/' },
+  n13:       { short:'N13', title:'Notice to End Tenancy Because Landlord Wants to Demolish, Repair or Convert', cure:'120 days notice + 3 months\' rent compensation required', officialUrl:'https://tribunalsontario.ca/ltb/forms/' }
+};
+
+function addDays(dateISO, n){ const d=new Date(dateISO+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+
+function initNoticeData(){
+  if(ui.noticeData) return;
+  const s=cur(); const o=data.owner;
+  ui.noticeData={
+    landlordName:o.name||'', landlordAddress:o.address||'', landlordPhone:o.phone||'',
+    tenantName:s?(s.applicant.name||''):'',
+    rentalUnit:s?(s.rental.property||''):'',
+    rentAmount:s?(s.rental.rent||''):'',
+    noticeDate:todayISO(),
+    periodFrom:'', periodTo:'', amountOwed:'',
+    incidentDate:'', incidentDescription:'',
+    latePaymentHistory:'',
+    whoMovesIn:'landlord', moveInRelationship:'',
+    workReason:'demolition'
+  };
+}
+function setNF(k,v){ initNoticeData(); ui.noticeData[k]=v; render(); }
+function nfv(k){ initNoticeData(); return ui.noticeData[k]||''; }
+
+function noticeResourceLinksHtml(){
+  return `<div class="panel" style="margin-top:12px">
+    <div class="sec-no">External resources</div>
+    <p class="hint" style="margin-bottom:10px">All links open in a new tab. URLs shown below each link so you can verify or navigate manually.</p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div><a href="https://tribunalsontario.ca/ltb/forms/" target="_blank" rel="noopener noreferrer" style="font-weight:600">LTB Forms Index ↗</a>
+        <div style="font-size:12px;color:var(--muted);margin-top:1px">Official Tribunals Ontario LTB forms — always current</div>
+        <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">tribunalsontario.ca/ltb/forms/</div></div>
+      <div><a href="https://openroom.ca/tenant-screening/" target="_blank" rel="noopener noreferrer" style="font-weight:600">Openroom LTB Record Search ↗</a>
+        <div style="font-size:12px;color:var(--muted);margin-top:1px">Free search: 7 years of Ontario LTB orders by tenant name</div>
+        <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">openroom.ca/tenant-screening/</div></div>
+      <div><a href="https://tribunalsontario.ca/ltb/e-file/" target="_blank" rel="noopener noreferrer" style="font-weight:600">Tribunals Ontario e-File Portal ↗</a>
+        <div style="font-size:12px;color:var(--muted);margin-top:1px">File your LTB application online after serving the notice</div>
+        <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">tribunalsontario.ca/ltb/e-file/</div></div>
+      <div><a href="https://www.ontario.ca/page/renting-ontario-your-rights" target="_blank" rel="noopener noreferrer" style="font-weight:600">Ontario Renting Rights Guide ↗</a>
+        <div style="font-size:12px;color:var(--muted);margin-top:1px">Plain-language guide to landlord and tenant rights in Ontario</div>
+        <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--muted)">ontario.ca/page/renting-ontario-your-rights</div></div>
+    </div>
+  </div>`;
+}
+
+function resolveNoticeForm(q1,q2){
+  if(q1==='nonpayment') return 'n4';
+  if(q1==='damage'){ if(q2==='safety') return 'n7'; if(q2==='other') return 'n5'; }
+  if(q1==='need-back'){ if(q2==='family') return 'n12'; if(q2==='work') return 'n13'; }
+  if(q1==='patterns'){ if(q2==='late') return 'n8-late'; if(q2==='crowd') return 'n8-crowd'; }
+  return null;
+}
+
+function noticeWizardHtml(){
+  const q1=ui.noticeQ1||'', q2=ui.noticeQ2||'';
+  const btn=(key,icon,label,active)=>`<button onclick="ui.noticeQ1='${key}';ui.noticeQ2='';render()" style="text-align:left;padding:12px;border:2px solid ${active?'var(--ink)':'var(--line)'};border-radius:4px;background:${active?'var(--ink)':'var(--raised)'};color:${active?'#F8F5EF':'var(--ink)'};line-height:1.4;cursor:pointer"><span style="font-size:20px">${icon}</span><br><b style="font-size:14px">${label}</b></button>`;
+  const sbtn=(key,label,active)=>`<button onclick="ui.noticeQ2='${key}';render()" style="border:2px solid ${active?'var(--ink)':'var(--line)'};background:${active?'var(--ink)':'var(--raised)'};color:${active?'#F8F5EF':'var(--ink)'};padding:9px 14px;border-radius:3px;cursor:pointer;font-size:13px">${label}</button>`;
+
+  let html=`<div class="panel"><div class="sec-no">LTB Notices — Step 1</div>
+    <h3 style="margin-bottom:4px">Which notice do you need?</h3>
+    <p class="hint">Answer 1–2 questions. The wizard recommends the right LTB form and pre-fills your details.</p>
+    <div style="margin:14px 0 10px"><b>What's the situation?</b></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:16px">
+      ${btn('nonpayment','💰','Tenant has not paid rent',q1==='nonpayment')}
+      ${btn('damage','🔨','Tenant is causing damage or disturbance',q1==='damage')}
+      ${btn('need-back','🏠','I need the rental unit back',q1==='need-back')}
+      ${btn('patterns','📋','Ongoing issues (always late, overcrowded)',q1==='patterns')}
+    </div>`;
+
+  if(q1==='damage'){
+    html+=`<div style="margin:4px 0 8px"><b>What kind of problem?</b></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        ${sbtn('safety','Serious safety issue (violence, weapons, drugs) → N7',q2==='safety')}
+        ${sbtn('other','Damage, noise, or other disturbance → N5',q2==='other')}
+      </div>`;
+  }
+  if(q1==='need-back'){
+    html+=`<div style="margin:4px 0 8px"><b>Why do you need it back?</b></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        ${sbtn('family','Landlord or family member needs to move in → N12',q2==='family')}
+        ${sbtn('work','Demolition, major repair, or conversion → N13',q2==='work')}
+      </div>`;
+  }
+  if(q1==='patterns'){
+    html+=`<div style="margin:4px 0 8px"><b>What's the ongoing issue?</b></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        ${sbtn('late','Tenant consistently pays rent late → N8',q2==='late')}
+        ${sbtn('crowd','Too many occupants in the unit → N8',q2==='crowd')}
+      </div>`;
+  }
+
+  const formKey=resolveNoticeForm(q1,q2);
+  if(formKey){
+    const m=NOTICE_META[formKey];
+    html+=`<div class="outcome o-met" style="margin-top:4px">
+      <div style="font-size:12px;color:var(--muted)">Recommended form</div>
+      <div style="font-family:'Source Serif 4',serif;font-size:20px;font-weight:600">${esc(m.short)}</div>
+      <div style="font-size:14px;margin:2px 0 4px">${esc(m.title)}</div>
+      <div style="font-size:13px;color:var(--muted)">${esc(m.cure)}</div>
+      <div class="actions" style="margin-top:10px">
+        <button class="primary" onclick="ui.noticeData=null;ui.noticeForm='${formKey}';render()">Fill in ${esc(m.short)} details →</button>
+      </div>
+    </div>`;
+  } else if(q1){
+    html+=`<div class="note">Select a sub-option above to see the recommended form.</div>`;
+  }
+  html+=`</div>`;
+  html+=noticeResourceLinksHtml();
+  return html;
+}
+
+function noticeFormBodyHtml(formKey){
+  initNoticeData();
+  const nd=ui.noticeData;
+  const nf=(k,label,type,extra)=>`<div class="field"><label>${label}</label><input type="${type||'text'}" value="${esc(nd[k]||'')}" ${extra||''} onchange="setNF('${k}',this.value)"></div>`;
+  const nta=(k,label,rows)=>`<div class="field"><label>${label}</label><textarea rows="${rows||2}" onchange="setNF('${k}',this.value)">${esc(nd[k]||'')}</textarea></div>`;
+  const kd=(label,val,note)=>`<div style="margin:4px 0"><span style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${label}:</span> <b>${val||'—'}</b>${note?` <span style="font-size:12px;color:var(--muted)"> — ${note}</span>`:''}</div>`;
+
+  let html=`<div class="row">${nf('landlordName','Landlord name')}${nf('landlordAddress','Landlord address')}</div>
+    <div class="row">${nf('landlordPhone','Landlord phone','tel')}${nf('tenantName','Tenant name')}</div>
+    ${nf('rentalUnit','Rental unit address')}`;
+
+  if(formKey==='n4'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,14):'';
+    html+=`<div class="row">${nf('rentAmount','Monthly rent ($)','number','min="0" step="0.01"')}${nf('noticeDate','Date of notice','date')}</div>
+      <div class="row">${nf('periodFrom','Rent owed — from (date)','date')}${nf('periodTo','Rent owed — to (date)','date')}</div>
+      ${nf('amountOwed','Total amount owed ($)','number','min="0" step="0.01"')}
+      <div class="dim" style="background:#F8F5EF;margin-top:10px">
+        <b style="font-family:'Source Serif 4',serif">Key dates</b>
+        ${kd('Termination date',termDate?fmtDate(termDate):null,'14 days from notice date')}
+        <p style="font-size:13px;margin:8px 0 4px">The tenant must <b>pay in full</b> or vacate by the termination date. If they pay, this notice is void. If they don't, you may file an <b>L1 application</b> the following day.</p>
+        <a href="https://tribunalsontario.ca/ltb/e-file/" target="_blank" rel="noopener noreferrer" style="font-size:12px">File L1 online at tribunalsontario.ca/ltb/e-file/ ↗</a>
+      </div>`;
+  } else if(formKey==='n5'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,20):'';
+    html+=`<div class="row">${nf('noticeDate','Date of notice','date')}${nf('incidentDate','Date(s) of incident','date')}</div>
+      ${nta('incidentDescription','Describe what happened (damage, noise, interference — be specific)',3)}
+      <div class="dim" style="background:#F8F5EF;margin-top:10px">
+        <b style="font-family:'Source Serif 4',serif">Key dates</b>
+        ${kd('Earliest termination date',termDate?fmtDate(termDate):null,'20 days from notice, last day of rental period')}
+        <p style="font-size:13px;margin:8px 0 4px">The tenant has <b>7 days</b> to remedy the problem. If they do, this notice is void. If they don't, you can file an <b>L2 application</b>.</p>
+        <p style="font-size:13px;margin:4px 0">A second N5 within 6 months requires no remedy period.</p>
+        <a href="https://tribunalsontario.ca/ltb/e-file/" target="_blank" rel="noopener noreferrer" style="font-size:12px">File L2 online at tribunalsontario.ca/ltb/e-file/ ↗</a>
+      </div>`;
+  } else if(formKey==='n7'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,10):'';
+    html+=`<div class="row">${nf('noticeDate','Date of notice','date')}${nf('incidentDate','Date(s) of incident','date')}</div>
+      ${nta('incidentDescription','Describe the serious safety issue (be specific: what, when, who)',3)}
+      <div class="dim" style="background:#F8F5EF;margin-top:10px">
+        <b style="font-family:'Source Serif 4',serif">Key dates</b>
+        ${kd('Termination date',termDate?fmtDate(termDate):null,'10 days from notice')}
+        <p style="font-size:13px;margin:8px 0 4px">N7 is for <b>serious safety issues only</b> — violence, illegal weapons, illegal drugs affecting safety. No remedy period. You can file an <b>L2 application immediately</b> after serving the notice.</p>
+        <a href="https://tribunalsontario.ca/ltb/e-file/" target="_blank" rel="noopener noreferrer" style="font-size:12px">File L2 online at tribunalsontario.ca/ltb/e-file/ ↗</a>
+      </div>`;
+  } else if(formKey==='n8-late'||formKey==='n8-crowd'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,60):'';
+    html+=`${nf('noticeDate','Date of notice','date')}
+      ${nta('latePaymentHistory',formKey==='n8-late'?'List the dates rent was paid late (one per line or separated by commas)':'Describe the overcrowding situation (current vs. permitted occupants)',3)}
+      <div class="dim" style="background:#F8F5EF;margin-top:10px">
+        <b style="font-family:'Source Serif 4',serif">Key dates</b>
+        ${kd('Minimum termination date',termDate?fmtDate(termDate):null,'60 days from notice, must be last day of a rental period')}
+        ${formKey==='n8-late'?`<p style="font-size:13px;margin:8px 0 4px">N8 for persistent late payment requires a <b>pattern</b> — the Board looks for repeated late payments, generally 3 or more times. Document the history thoroughly.</p>`:''}
+        <a href="https://tribunalsontario.ca/ltb/e-file/" target="_blank" rel="noopener noreferrer" style="font-size:12px">File L2 online at tribunalsontario.ca/ltb/e-file/ ↗</a>
+      </div>`;
+  } else if(formKey==='n12'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,60):'';
+    const comp=nd.rentAmount?money(nd.rentAmount):"1 month's rent";
+    html+=`${nf('noticeDate','Date of notice','date')}
+      <div class="field"><label>Who needs to move in?</label>
+        <select onchange="setNF('whoMovesIn',this.value)">
+          <option value="landlord" ${nd.whoMovesIn==='landlord'?'selected':''}>The landlord</option>
+          <option value="purchaser" ${nd.whoMovesIn==='purchaser'?'selected':''}>A purchaser of the property</option>
+          <option value="family" ${nd.whoMovesIn==='family'?'selected':''}>A family member of the landlord</option>
+        </select></div>
+      ${nd.whoMovesIn==='family'?nf('moveInRelationship','Their relationship to you (e.g. son, mother)'):''}
+      <div class="dim" style="background:#F8F5EF;margin-top:10px">
+        <b style="font-family:'Source Serif 4',serif">Key dates &amp; requirements</b>
+        ${kd('Minimum termination date',termDate?fmtDate(termDate):null,'60 days, must be last day of rental period')}
+        <div class="note" style="margin:8px 0 4px;background:#FDE8E4;color:#7a1f12">⚠️ <b>Compensation required:</b> You must pay the tenant <b>${comp}</b> by the termination date, or offer a comparable unit.</div>
+        <p style="font-size:13px;margin:4px 0">The person moving in must <b>actually reside there for at least 12 months</b>. Bad-faith N12 evictions carry heavy penalties including up to 12 months' rent to the tenant.</p>
+        <a href="https://tribunalsontario.ca/ltb/e-file/" target="_blank" rel="noopener noreferrer" style="font-size:12px">File L3 or L9 online at tribunalsontario.ca/ltb/e-file/ ↗</a>
+      </div>`;
+  } else if(formKey==='n13'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,120):'';
+    const comp3=nd.rentAmount?money(Number(nd.rentAmount)*3):"3 months' rent";
+    html+=`${nf('noticeDate','Date of notice','date')}
+      <div class="field"><label>Reason for notice</label>
+        <select onchange="setNF('workReason',this.value)">
+          <option value="demolition" ${nd.workReason==='demolition'?'selected':''}>Demolition</option>
+          <option value="repair" ${nd.workReason==='repair'?'selected':''}>Extensive repairs requiring the unit to be vacant</option>
+          <option value="conversion" ${nd.workReason==='conversion'?'selected':''}>Conversion to non-residential use</option>
+        </select></div>
+      <div class="dim" style="background:#F8F5EF;margin-top:10px">
+        <b style="font-family:'Source Serif 4',serif">Key dates &amp; requirements</b>
+        ${kd('Minimum termination date',termDate?fmtDate(termDate):null,'120 days, must be last day of rental period')}
+        <div class="note" style="margin:8px 0 4px;background:#FDE8E4;color:#7a1f12">⚠️ <b>Compensation required:</b> You must pay the tenant <b>${comp3}</b>, or offer a comparable replacement unit.</div>
+        ${nd.workReason==='repair'?`<p style="font-size:13px;margin:4px 0">For repairs: you must have the necessary permits, and the work must genuinely require the unit to be vacant. The tenant has a <b>right of first refusal</b> to return when repairs are complete.</p>`:''}
+        <a href="https://tribunalsontario.ca/ltb/e-file/" target="_blank" rel="noopener noreferrer" style="font-size:12px">File your application online at tribunalsontario.ca/ltb/e-file/ ↗</a>
+      </div>`;
+  }
+  return html;
+}
+
+function renderNotices(el){
+  if(!ui.noticeForm){
+    el.innerHTML=noticeWizardHtml();
+    return;
+  }
+  initNoticeData();
+  const m=NOTICE_META[ui.noticeForm];
+  el.innerHTML=`<div style="margin-bottom:12px"><button onclick="ui.noticeForm=null;render()" style="font-size:13px">← Back to wizard</button></div>
+    <div class="panel">
+      <div class="sec-no">LTB Notice — ${esc(m.short)}</div>
+      <h3 style="margin-bottom:6px">${esc(m.short)} — ${esc(m.title)}</h3>
+      <div class="note" style="border-left:4px solid var(--amber);margin-bottom:14px">
+        <b>Draft only.</b> This document is a reference to help you prepare. The legally valid notice is the <b>official Tribunals Ontario form</b> — use the "Get Official Form" button below. File that form, not this one.
+      </div>
+      <div id="notice-form-body">${noticeFormBodyHtml(ui.noticeForm)}</div>
+      <div style="margin-top:20px;padding-top:14px;border-top:1px solid var(--line)">
+        <div class="sec-no" style="margin-bottom:10px">Actions</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <a href="${esc(m.officialUrl)}" target="_blank" rel="noopener noreferrer"><button class="primary">Get Official ${esc(m.short)} Form ↗</button></a>
+            <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--muted);margin-top:3px">tribunalsontario.ca/ltb/forms/</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:1px">Download the official form from Tribunals Ontario — this is the one you serve on the tenant.</div>
+          </div>
+          <div>
+            <button onclick="downloadNoticePdf('${ui.noticeForm}')">Download draft PDF</button>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">Reference draft only — clearly marked. Not the official notice.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    ${noticeResourceLinksHtml()}`;
+}
+
+function buildNoticePdf(formKey){
+  const jspdfLib=window.jspdf; if(!jspdfLib||!jspdfLib.jsPDF) return null;
+  const { jsPDF }=jspdfLib; const doc=new jsPDF({unit:'pt',format:'letter'});
+  initNoticeData(); const nd=ui.noticeData; const m=NOTICE_META[formKey];
+  const W=612,H=792,M=40;
+  const INK=[28,43,57],MUT=[107,102,89],RED=[154,51,36],LINE=[201,194,179],AMB=[184,134,63];
+  let y=M;
+
+  const txt=(s,opts={})=>{ doc.setFont('helvetica',opts.bold?'bold':'normal'); doc.setFontSize(opts.size||10); doc.setTextColor(...(opts.color||INK));
+    const lines=doc.splitTextToSize(s,opts.w||(W-M*2)); doc.text(lines,M,y); y+=lines.length*(opts.size||10)*1.3+(opts.gap!=null?opts.gap:4); };
+  const section=(title)=>{ y+=6; doc.setDrawColor(...LINE); doc.setLineWidth(0.5); doc.line(M,y,W-M,y); y+=10;
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...MUT); doc.text(title.toUpperCase(),M,y); y+=12; };
+  const twoCol=(l1,v1,l2,v2)=>{ const hw=(W-M*2-12)/2;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...MUT); doc.text(l1.toUpperCase(),M,y); doc.text(l2.toUpperCase(),M+hw+12,y); y+=10;
+    doc.setFontSize(10); doc.setTextColor(...INK);
+    const a=doc.splitTextToSize(v1||'—',hw), b=doc.splitTextToSize(v2||'—',hw);
+    doc.text(a,M,y); doc.text(b,M+hw+12,y); y+=Math.max(a.length,b.length)*13+6; };
+
+  // Header
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...RED);
+  doc.text('DRAFT — FOR REFERENCE ONLY — FILE THE OFFICIAL TRIBUNALS ONTARIO FORM',M,y); y+=14;
+  doc.setFontSize(16); doc.setTextColor(...INK);
+  doc.text(m.short,M,y); y+=4;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const titleLines=doc.splitTextToSize(m.title,W-M*2); doc.text(titleLines,M,y); y+=titleLines.length*13+8;
+
+  // Draft watermark
+  doc.saveGraphicsState();
+  doc.setFont('helvetica','bold'); doc.setFontSize(80); doc.setTextColor(220,60,40);
+  doc.setGState(new doc.GState({opacity:0.08}));
+  doc.text('DRAFT',W/2,H/2,{align:'center',angle:35});
+  doc.restoreGraphicsState();
+
+  section('Parties');
+  twoCol('Landlord Name',nd.landlordName,'Landlord Address',nd.landlordAddress);
+  twoCol('Tenant Name',nd.tenantName,'Rental Unit Address',nd.rentalUnit);
+
+  section('Notice Details');
+  if(formKey==='n4'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,14):'';
+    twoCol('Date of Notice',nd.noticeDate?fmtDate(nd.noticeDate):''  ,'Monthly Rent',nd.rentAmount?money(nd.rentAmount):'');
+    twoCol('Rent Period From',nd.periodFrom?fmtDate(nd.periodFrom):'','Rent Period To',nd.periodTo?fmtDate(nd.periodTo):'');
+    twoCol('Total Amount Owed',nd.amountOwed?money(nd.amountOwed):'' ,'Termination Date',termDate?fmtDate(termDate):'');
+    y+=4; txt('The tenant must pay the full amount owed or vacate by the termination date. If they pay in full, this notice is void.',{size:9,color:MUT});
+    txt('If the tenant does not pay and does not vacate, you may file an L1 Application at tribunalsontario.ca/ltb/e-file/',{size:9,color:MUT});
+  } else if(formKey==='n5'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,20):'';
+    twoCol('Date of Notice',nd.noticeDate?fmtDate(nd.noticeDate):'','Date(s) of Incident',nd.incidentDate?fmtDate(nd.incidentDate):'');
+    twoCol('Earliest Termination Date',termDate?fmtDate(termDate):'','Notice Type','First notice (7-day remedy period)');
+    y+=4; txt('Description of problem:',{bold:true,size:9});
+    txt(nd.incidentDescription||'(not entered)',{size:9,color:MUT});
+    txt('The tenant has 7 days to remedy the problem. If remedied, this notice is void. If not, file an L2 Application.',{size:9,color:MUT});
+  } else if(formKey==='n7'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,10):'';
+    twoCol('Date of Notice',nd.noticeDate?fmtDate(nd.noticeDate):'','Termination Date (10 days)',termDate?fmtDate(termDate):'');
+    twoCol('Date(s) of Incident',nd.incidentDate?fmtDate(nd.incidentDate):'','','');
+    y+=4; txt('Description of serious safety issue:',{bold:true,size:9});
+    txt(nd.incidentDescription||'(not entered)',{size:9,color:MUT});
+    txt('N7 is for serious safety issues only. No remedy period. You may file an L2 Application immediately.',{size:9,color:MUT});
+  } else if(formKey==='n8-late'||formKey==='n8-crowd'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,60):'';
+    twoCol('Date of Notice',nd.noticeDate?fmtDate(nd.noticeDate):'','Minimum Termination Date (60 days)',termDate?fmtDate(termDate):'');
+    y+=4; txt(formKey==='n8-late'?'Late payment history:':'Overcrowding details:',{bold:true,size:9});
+    txt(nd.latePaymentHistory||'(not entered)',{size:9,color:MUT});
+    txt('The termination date must be the last day of a rental period at least 60 days after this notice.',{size:9,color:MUT});
+  } else if(formKey==='n12'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,60):'';
+    const whoMap={landlord:'The landlord',purchaser:'A purchaser of the property',family:'A family member of the landlord'};
+    twoCol('Date of Notice',nd.noticeDate?fmtDate(nd.noticeDate):'','Minimum Termination Date (60 days)',termDate?fmtDate(termDate):'');
+    twoCol('Who Requires the Unit',whoMap[nd.whoMovesIn]||nd.whoMovesIn,'Relationship',nd.whoMovesIn==='family'?(nd.moveInRelationship||''):'n/a');
+    const comp=nd.rentAmount?money(nd.rentAmount):"1 month's rent";
+    y+=4; doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...RED);
+    doc.text('Compensation required: '+comp+' must be paid to the tenant by the termination date.',M,y); y+=16;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...MUT);
+    doc.text('The person moving in must actually reside in the unit for at least 12 months. Bad-faith evictions carry heavy penalties.',M,y,{maxWidth:W-M*2}); y+=20;
+  } else if(formKey==='n13'){
+    const termDate=nd.noticeDate?addDays(nd.noticeDate,120):'';
+    const reasonMap={demolition:'Demolition',repair:'Extensive repairs requiring vacant unit',conversion:'Conversion to non-residential use'};
+    const comp3=nd.rentAmount?money(Number(nd.rentAmount)*3):"3 months' rent";
+    twoCol('Date of Notice',nd.noticeDate?fmtDate(nd.noticeDate):'','Minimum Termination Date (120 days)',termDate?fmtDate(termDate):'');
+    twoCol('Reason',reasonMap[nd.workReason]||nd.workReason,'','');
+    y+=4; doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...RED);
+    doc.text('Compensation required: '+comp3+' must be paid to the tenant.',M,y); y+=16;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...MUT);
+    doc.text('The termination date must be last day of a rental period at least 120 days from this notice.',M,y,{maxWidth:W-M*2}); y+=16;
+  }
+
+  section('Next Steps');
+  txt('1. Download the official '+m.short+' form: tribunalsontario.ca/ltb/forms/',{size:9});
+  txt('2. Complete and serve the official form on the tenant by an acceptable method.',{size:9});
+  txt('3. After the termination date (if unresolved), file your application: tribunalsontario.ca/ltb/e-file/',{size:9});
+  txt('4. Search for past LTB orders against this tenant (free): openroom.ca/tenant-screening/',{size:9});
+
+  // Footer disclaimer
+  const discY=H-M-20;
+  doc.setDrawColor(...LINE); doc.setLineWidth(0.5); doc.line(M,discY-10,W-M,discY-10);
+  doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(...MUT);
+  doc.text('DRAFT — This document was generated for reference only. It is not the official LTB notice. File the official Tribunals Ontario form. Contains personal information — store and dispose of securely.',M,discY,{maxWidth:W-M*2});
+
+  return doc;
+}
+function downloadNoticePdf(formKey){
+  const m=NOTICE_META[formKey];
+  const doc=buildNoticePdf(formKey); if(!doc){ toast('PDF library not loaded'); return; }
+  const nm=(ui.noticeData&&ui.noticeData.tenantName?ui.noticeData.tenantName.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''):'tenant');
+  doc.save(m.short.toLowerCase()+'-draft-'+nm+'-'+todayISO()+'.pdf');
+  toast('Draft PDF downloaded — remember to file the official '+m.short+' form from Tribunals Ontario');
 }
 
 /* ======================= ROOT ======================= */
