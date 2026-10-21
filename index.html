@@ -1000,7 +1000,7 @@ function renderReport(el){
       ${m.prelim.signals.map(c=>`<span style="display:block">${c.st==='ok'?'✓':c.st==='bad'?'✕':c.st==='warn'?'!':'○'} ${esc(c.txt)}</span>`).join('')}
       <p class="hint">Based on payslip data and public web results about the employer. Not confirmed with the employer unless stated in the Employment check above.</p>`:''}
     ${m.docs?`<h3 style="margin-top:18px">Documents read automatically</h3>
-      <div class="tablewrap"><table><thead><tr><th>Document</th><th>Key details read</th></tr></thead><tbody>${m.docs.list.map(x=>`<tr><td>${esc(x.type)}<br><span class="hint">${esc(x.fileName)}${x.method==='ocr'?' · OCR':''}</span></td><td>${esc(x.summary||'-')}</td></tr>`).join('')}</tbody></table></div>
+      <div class="tablewrap"><table><thead><tr><th>Document</th><th>Key details read</th></tr></thead><tbody>${m.docs.list.map(x=>`<tr><td>${esc(x.type)}<br><span class="hint">${esc(x.fileName)}${x.method==='ocr'?' · '+(x.ocrLabel||'OCR'):''}</span></td><td>${esc(x.summary||'-')}</td></tr>`).join('')}</tbody></table></div>
       <p style="margin-top:8px">${m.docs.checks.map(c=>`<span style="display:block">${c.lvl==='ok'?'✓':c.lvl==='bad'?'✕':c.lvl==='warn'?'!':'i'} ${esc(c.txt)}</span>`).join('')}</p>
       ${m.docs.manual.length?`<div class="note"><b>Manual verification and overrides</b>${m.docs.manual.map(x=>`<div>${esc(x.section)}: ${esc(x.state)}</div>`).join('')}</div>`:''}<p class="hint">Read by software from files the applicant supplied. ID photo compared by owner: ${m.docs.confirm.idPhoto?'yes':'no'}. Employer confirmed directly: ${m.docs.confirm.employer?'yes':'no'}. Not proof of authenticity.</p>`:''}
     <h3 style="margin-top:18px">Consents</h3>
@@ -1105,7 +1105,7 @@ function buildPdf(m, JsPDF){
   }
   if(m.docs){
     section('Documents read automatically');
-    m.docs.list.forEach(x=>{ txt(x.type+' ('+x.fileName+(x.method==='ocr'?', OCR':'')+')',{size:9.5,bold:true,gap:1}); txt(x.summary||'-',{size:8.5,color:MUT,gap:3}); });
+    m.docs.list.forEach(x=>{ txt(x.type+' ('+x.fileName+(x.method==='ocr'?', '+(x.ocrLabel||'OCR'):'')+')',{size:9.5,bold:true,gap:1}); txt(x.summary||'-',{size:8.5,color:MUT,gap:3}); });
     m.docs.manual.forEach(x=>txt('[MANUAL] '+x.section+': '+x.state,{size:9,bold:true,color:COL.review}));
     m.docs.checks.forEach(c=>txt((c.lvl==='ok'?'[OK] ':c.lvl==='bad'?'[PROBLEM] ':c.lvl==='warn'?'[CHECK] ':'[NOTE] ')+c.txt,{size:9,color:c.lvl==='bad'?COL.not_met:INK}));
     txt('ID photo compared by owner: '+(m.docs.confirm.idPhoto?'yes':'no')+'. Employer confirmed directly: '+(m.docs.confirm.employer?'yes':'no')+'. Software reading of applicant-supplied files; not proof of authenticity.',{size:8.5,color:MUT});
@@ -1139,7 +1139,8 @@ function downloadPdf(){
    Only the extracted fields are kept, never the image or the full text. */
 const DOC_TYPES={id:'Photo ID',paystub:'Paystub',noa:'CRA Notice of Assessment',t4:'T4 slip',letter:'Employment letter',credit:'Credit report',bank:'Bank statement',lease:'Previous lease',osb:'OSB insolvency search result',police:'Police record check (applicant-supplied)',court:'Court records search result',other:'Unrecognized document'};
 const DOC_MEM={}; const DOC_ST={busy:false,applied:[]};
-const PADDLE_OCR_URL='https://cdn.jsdelivr.net/npm/@paddlejs-models/ocr/dist/ocr.js';
+const PADDLE_OCR_URL='https://cdn.jsdelivr.net/npm/@paddlejs-models/ocr@1.2.4/lib/index.js';
+const TESSERACT_OCR_URL='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 
 /* ---------- text helpers ---------- */
 const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
@@ -1397,15 +1398,35 @@ function extractDoc(type,L,fileName,csvRows){
 
 /* ---------- reading files (text, OCR) ---------- */
 function loadScript(src){ return new Promise((res,rej)=>{ const e=document.createElement('script'); e.src=src; e.onload=res; e.onerror=()=>rej(new Error('Could not load '+src)); document.head.appendChild(e); }); }
-let _ocr=null;
+let _ocr=null; let _ocrEngine=''; // 'paddle' | 'tesseract'
 async function ensureOcr(){
   if(_ocr) return _ocr;
-  if(!window.ocr) { setBusy('Loading OCR engine...'); await loadScript(window.__OCR_URL||PADDLE_OCR_URL); }
-  setBusy('Initializing OCR engine...');
-  await window.ocr.init();
-  _ocr=window.ocr;
+  // Try PaddleOCR first
+  if(!window.ocr){
+    setBusy('Loading OCR engine (OCR-P)...');
+    try{ await loadScript(window.__OCR_URL||PADDLE_OCR_URL); }catch(e){ window.ocr=null; }
+  }
+  if(window.ocr && typeof window.ocr.init==='function'){
+    try{
+      setBusy('Initializing OCR-P...');
+      await window.ocr.init();
+      _ocr=window.ocr; _ocrEngine='paddle';
+      return _ocr;
+    }catch(e){ window.ocr=null; }
+  }
+  // Fallback to Tesseract.js
+  setBusy('OCR-P unavailable — loading OCR-T...');
+  if(!window.Tesseract) await loadScript(TESSERACT_OCR_URL);
+  setBusy('Initializing OCR-T...');
+  const worker=await window.Tesseract.createWorker(['eng','fra']);
+  _ocr={_worker:worker, recognize:async function(canvas){
+    const {data}=await worker.recognize(canvas);
+    return {text:data.text, conf:Math.round(data.confidence)};
+  }};
+  _ocrEngine='tesseract';
   return _ocr;
 }
+function ocrEngineLabel(){ return _ocrEngine==='tesseract'?'OCR-T':'OCR-P'; }
 /* Photos from phones are often huge, rotated by EXIF, or low contrast. Normalize before OCR: apply the EXIF rotation,
    scale the long side into 1800-2600 px, convert to grayscale and stretch the contrast. Falls back to the raw file. */
 async function prepImage(blob){
@@ -1428,7 +1449,8 @@ async function ocrBlob(blob){
   const cv=document.createElement('canvas'); cv.width=img.naturalWidth; cv.height=img.naturalHeight;
   cv.getContext('2d').drawImage(img,0,0);
   const results=await engine.recognize(cv);
-  const text=Array.isArray(results)?results.map(r=>r.text||'').join('\n'):(results&&results.text?results.text:'');
+  if(results&&typeof results.text==='string') return {text:results.text, conf:results.conf!=null?results.conf:82};
+  const text=Array.isArray(results)?results.map(r=>r.text||'').join('\n'):'';
   return {text,conf:82};
 }
 function setBusy(msg){ const e=document.getElementById('docBusy'); if(e) e.textContent=msg; }
@@ -1456,14 +1478,14 @@ async function readOne(s,file){
     const per=[]; for(let p=1;p<=Math.min(doc.numPages,8);p++){ const page=await doc.getPage(p); const tc=await page.getTextContent(); per.push(itemsToLines(tc.items.map(i=>({str:i.str,x:i.transform[4],y:i.transform[5]})))); }
     lines=[].concat.apply([],per); const hasText=lines.join('').replace(/\s/g,'').length>=40;
     if(!hasText){
-      method='ocr'; lines=[]; const confs=[];
-      for(let p=1;p<=Math.min(doc.numPages,6);p++){ setBusy('Rendering page '+p+' for OCR...'); const page=await doc.getPage(p); const vp=page.getViewport({scale:2}); const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+      method='ocr'; lines=[]; const confs=[]; await ensureOcr();
+      for(let p=1;p<=Math.min(doc.numPages,6);p++){ setBusy('Rendering page '+p+' for '+ocrEngineLabel()+'...'); const page=await doc.getPage(p); const vp=page.getViewport({scale:2}); const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
         await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise; const blob=await new Promise(r=>cv.toBlob(r,'image/png')); const o=await ocrBlob(blob); lines=lines.concat(o.text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)); confs.push(o.conf); }
       conf=confs.length?Math.round(confs.reduce((a,b)=>a+b,0)/confs.length):null;
     }
     auth=pdfFlags(bytes,meta,hasText);
   } else if(isImg){
-    method='ocr'; setBusy('Preparing the image...'); const prepped=await prepImage(file); setBusy('Reading text from image...'); let o=await ocrBlob(prepped); if(prepped!==file&&o.conf<60){ const o2=await ocrBlob(file); if(o2.conf>o.conf) o=o2; } lines=o.text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean); conf=o.conf;
+    method='ocr'; setBusy('Preparing the image...'); const prepped=await prepImage(file); await ensureOcr(); setBusy('Reading text from image ('+ocrEngineLabel()+')...'); let o=await ocrBlob(prepped); if(prepped!==file&&o.conf<60){ const o2=await ocrBlob(file); if(o2.conf>o.conf) o=o2; } lines=o.text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean); conf=o.conf;
     auth={tier:'unassessable',flags:[{level:'info',title:'Photo or scan: edits to the image cannot be detected here'}],producer:''};
   } else {
     const txt=new TextDecoder('utf-8').decode(bytes); lines=txt.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
@@ -1474,7 +1496,8 @@ async function readOne(s,file){
   const typeAuto=classifyDoc(text,file.name,lines);
   const type=(window._docHint&&typeAuto==='other')?window._docHint:typeAuto;
   const ex=extractDoc(type,lines,file.name,csvRows);
-  const d={id,fileName:file.name,size:file.size,sha256:sha,type,typeAuto,method,conf,readAt:nowISO(),f:ex.f,notes:ex.notes,guess:ex.guess||{},over:{},auth,nameHit:null};
+  const ocrLabel=method==='ocr'?ocrEngineLabel():null;
+  const d={id,fileName:file.name,size:file.size,sha256:sha,type,typeAuto,method,conf,ocrLabel,readAt:nowISO(),f:ex.f,notes:ex.notes,guess:ex.guess||{},over:{},auth,nameHit:null};
   (s.docs||(s.docs=[])).push(d); DOC_MEM[id]={text,lines,csvRows,file};
   if(type==='id'&&!s.applicant.name&&ex.f.name) s.applicant.name=ex.f.name;
   refreshNameHits(s);
@@ -1484,7 +1507,7 @@ function refreshNameHits(s){ (s.docs||[]).forEach(d=>{ const m=DOC_MEM[d.id]; if
 async function readDocFiles(files,hintType){
   const s=cur(); if(!s||!files||!files.length) return; DOC_ST.busy=true; render();
   window._docHint=hintType||null;
-  for(const file of Array.from(files)){ try{ setBusy('Reading '+file.name+'...'); await readOne(s,file); }catch(e){ console.error(e); toast('Could not read '+file.name+(/Could not load/.test(e.message)?' (text reader unavailable offline)':'')); } }
+  for(const file of Array.from(files)){ try{ setBusy('Reading '+file.name+'...'); await readOne(s,file); }catch(e){ console.error(e); toast('Could not read '+file.name+(/Could not load/.test(e.message)?' (OCR-P and OCR-T both unavailable — check your connection)':'')); } }
   window._docHint=null; DOC_ST.busy=false; s.updatedAt=nowISO(); save(); render();
 }
 function onDocDrop(ev){ ev.preventDefault(); readDocFiles(ev.dataTransfer.files); }
@@ -1793,7 +1816,7 @@ function docCardHtml(s,d){
     return `<div><div class="hint" style="margin:0 0 2px;text-transform:uppercase;font-size:11px;letter-spacing:.04em;display:flex;justify-content:space-between;gap:6px"><span>${esc(sp.l)}${sp.c?' *':''}</span><span>${c!=null?`<b style="color:${confColor(c)}">${c}%</b>`:''}</span></div>${input}${edited?`<div class="hint" style="margin:2px 0 0;color:var(--amber)">Edited by you (was ${esc(String(edited.from===''?'blank':edited.from))}) <a href="#" onclick="resetDocField('${d.id}','${sp.k}');return false">undo</a></div>`:''}</div>`;
   }).join('');
   const marks=docChecks(s).filter(c=>c.ids.includes(d.id)).map(c=>({st:c.lvl,txt:c.txt}));
-  return `<div class="dim" style="${low?'border-color:var(--red)':''}"><div class="dim-h"><div><b>${esc(DOC_TYPES[d.type])}</b> ${d.type==='other'?'':confChip(sc)}<span class="badge">${esc(d.fileName)} · ${d.method==='ocr'?'read by OCR (engine '+(d.conf!=null?d.conf:'?')+'%)':'text read'}</span></div>
+  return `<div class="dim" style="${low?'border-color:var(--red)':''}"><div class="dim-h"><div><b>${esc(DOC_TYPES[d.type])}</b> ${d.type==='other'?'':confChip(sc)}<span class="badge">${esc(d.fileName)} · ${d.method==='ocr'?'read by '+(d.ocrLabel||'OCR')+' (engine '+(d.conf!=null?d.conf:'?')+'%)':'text read'}</span></div>
       <div class="actions noprint" style="display:flex;gap:6px;align-items:center"><select style="width:auto" onchange="reclassifyDoc('${d.id}',this.value)">${Object.keys(DOC_TYPES).map(k=>`<option value="${k}" ${d.type===k?'selected':''}>${esc(DOC_TYPES[k])}</option>`).join('')}</select><button class="small danger" onclick="removeDoc('${d.id}')">Remove</button></div></div>
     ${low?`<div class="note" style="border-left:4px solid var(--red)"><b>Low confidence (${sc}%).</b> Compare each value with the original and fix any that are wrong. Then mark the section manually verified${feeds.length?' ('+feeds.map(k=>DIM_NAME[k]).join(', ')+')':''}.</div>`:''}
     ${spec.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 14px;margin-top:8px">${fields}</div><div class="hint" style="margin-top:6px">* critical field. Percentages show how sure the reader is of each value. Type over a value to correct it; it is then flagged as an owner edit.</div>`:''}
