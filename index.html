@@ -797,7 +797,7 @@ function incomeBodyHtml(s){
   if(est){
     estBanner=`<div style="background:#EEF7EE;border:1px solid var(--green);border-radius:4px;padding:8px 12px;margin-bottom:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <span style="font-size:15px;font-weight:700">${fmtMoney(est.monthly)}<span style="font-size:12px;font-weight:400;color:var(--muted)">/month estimated gross</span></span>
-      ${rent?`<span style="font-size:13px">Rent-to-income: <b id="r2i">${r2iVal!=null?r2iVal+'%':'—'}</b> <span class="hint" style="margin:0">(information only)</span></span>`:'<span class="hint" style="margin:0" id="r2i"></span>'}
+      ${rent?`<span style="font-size:13px">Rent-to-income: <b id="r2i">${r2iVal!=null?r2iVal+'%  ('+money(rent)+' rent ÷ '+money(monthly)+' income / month)':'—'}</b> <span class="hint" style="margin:0">(information only)</span></span>`:'<span class="hint" style="margin:0" id="r2i"></span>'}
       <span class="hint" style="margin:0;flex-basis:100%">Source: ${esc(est.basis)}</span>
     </div>`;
   }
@@ -944,13 +944,13 @@ function searchPackHtml(s,key){
     <div style="font-size:13px">${done(true)}Consent recorded ${s.consents&&s.consents[dm.consent]&&s.consents[dm.consent].at?esc(fmtDT(s.consents[dm.consent].at)):''}<br>${key==='police'?'':done(opened)+(opened?'Official search opened '+esc(fmtDT(opened)):'Official search not opened yet')+'<br>'}${done(has)}${has?'Result added':'Result not added yet'}</div>
     <p class="hint" style="margin:8px 0 0"><b>Reminder:</b> ${p.use}</p></div>`;
 }
-function liveR2I(){ const s=cur(); const el=document.getElementById('r2i'); if(!el) return; const inp=document.querySelector('input[onchange*="income.monthly"]'); const i=Number(inp.value), r=Number(s.rental.rent); el.textContent=(r>0&&i>0)?Math.round(r/i*100)+'%':'enter rent and income'; }
+function liveR2I(){ const s=cur(); const el=document.getElementById('r2i'); if(!el) return; const inp=document.querySelector('input[onchange*="income.monthly"]'); const i=Number(inp.value), r=Number(s.rental.rent); el.textContent=(r>0&&i>0)?Math.round(r/i*100)+'%  ('+money(r)+' rent ÷ '+money(i)+' income / month)':'enter monthly rent (step 1) and monthly income above'; }
 function refreshLive(){
   const s=cur(); if(!s) return;
   document.querySelectorAll('[data-chip]').forEach(n=>{ n.innerHTML=chip(dimStatus(s,n.dataset.chip)); });
   document.querySelectorAll('[data-dimdot]').forEach(n=>{ n.className='dot c-'+dimStatus(s,n.dataset.dimdot); });
   const sp=document.getElementById('stepper'); if(sp) sp.innerHTML=stepperHtml(s);
-  const r=document.getElementById('r2i'); if(r){ const v=r2i(s); r.textContent=v==null?'enter rent and income':v+'%'; }
+  const r=document.getElementById('r2i'); if(r){ const v=r2i(s),rent=Number(s.rental.rent),inc=Number(s.income.monthly); r.textContent=v==null?'enter monthly rent (step 1) and monthly income above':v+'%  ('+money(rent)+' rent ÷ '+money(inc)+' income / month)'; }
   const o=document.getElementById('outcome'); if(o) o.innerHTML=outcomeHtml(s);
   renderList();
 }
@@ -1336,28 +1336,36 @@ function buildPdf(m, JsPDF){
   const COL={clear:[63,107,84],concern:[154,51,36],unchecked:[138,133,118],na:[154,138,102],met:[63,107,84],not_met:[154,51,36],review:[184,134,63],incomplete:[138,133,118]};
   const TINT={met:[228,238,232],not_met:[243,225,221],review:[246,236,214],incomplete:[236,233,225]};
   const need=h=>{ if(y+h>H-56){ doc.addPage(); y=M; } };
+  const newPage=()=>{ doc.addPage(); y=M; };
   function txt(str,o){ o=o||{}; const size=o.size||10, lh=o.lh||1.35, x=o.x==null?M:o.x, w=o.w||CW;
     doc.setFont(o.font||'helvetica',o.bold?'bold':'normal'); doc.setFontSize(size); doc.setTextColor.apply(doc,o.color||INK);
     const lines=doc.splitTextToSize(pdfClean(str),w);
     lines.forEach(l=>{ need(size*lh); doc.text(l,x,y+size); y+=size*lh; }); y+=o.gap||0; return lines.length; }
-  function section(t){ need(40); y+=10; txt(t,{size:12,bold:true,font:'times'}); doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.8); doc.line(M,y,W-M,y); y+=8; }
-  // header band
+  function section(t,num){ need(40); y+=10;
+    if(num){ doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor.apply(doc,MUT); doc.text(pdfClean('§'+num),M,y+12); }
+    txt(t,{size:12,bold:true,font:'times',x:num?M+20:M,w:num?CW-20:CW});
+    doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.8); doc.line(M,y,W-M,y); y+=8; }
+  function pageLabel(label){ doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor.apply(doc,MUT);
+    doc.text(pdfClean(label),W-M,M-6,{align:'right'}); }
+
+  // ── PAGE 1: Decision (sections 1–4) ────────────────────────────────────────
+  // §1 header band
   doc.setFillColor.apply(doc,INK); doc.rect(0,0,W,84,'F');
   doc.setTextColor(248,245,239); doc.setFont('times','bold'); doc.setFontSize(22); doc.text('LEASE — Screening Report',M,40);
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text(pdfClean('Ontario residential tenancy | Ref '+m.id+' | Generated '+fmtDT(m.generatedAt)),M,60);
   if(m.outcome.final==='incomplete'){ doc.setTextColor(217,183,122); doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.text('DRAFT - INCOMPLETE',W-M-110,40); }
   y=102;
-  // applicant
+  // §1 applicant block
   txt(m.applicant.name||'Unnamed applicant',{size:17,bold:true,font:'times'});
   txt([m.rental.property, m.rental.rent?money(m.rental.rent)+' per month':'', m.rental.moveIn?'Move-in '+fmtDate(m.rental.moveIn):''].filter(Boolean).join('  |  '),{size:10,color:MUT});
   txt([m.applicant.email,m.applicant.phone,m.applicant.address].filter(Boolean).join('  |  '),{size:9,color:MUT,gap:8});
-  // scorecard tiles
+  // §1 scorecard tiles
   const n=m.dims.length, gap=4, tw=(CW-gap*(n-1))/n; need(48);
   m.dims.forEach((d,i)=>{ const x=M+i*(tw+gap); const c=COL[d.status]; doc.setFillColor.apply(doc,c); doc.roundedRect(x,y,tw,40,3,3,'F');
     doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text(pdfClean(d.short),x+tw/2,y+17,{align:'center'});
     doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.text(pdfClean(STATUS_LABEL[d.status]),x+tw/2,y+30,{align:'center'}); });
   y+=52;
-  // outcome box
+  // §1 outcome box
   const lines=[]; const ow=CW-30;
   m.outcome.reasons.forEach(r=>lines.push('- '+r));
   if(m.outcome.missing.length) lines.push('Still needed: '+m.outcome.missing.join(', '));
@@ -1373,11 +1381,11 @@ function buildPdf(m, JsPDF){
   let ty=y+52; doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc,INK);
   wrapped.forEach(ls=>ls.forEach(l=>{ doc.text(l,M+18,ty); ty+=13; }));
   y+=bh+8;
-  // criteria
-  section('Criteria');
+  // §2 criteria
+  section('Criteria','2');
   txt(m.criteria.lockedAt?('Locked '+fmtDT(m.criteria.lockedAt)+' before any check was recorded. Minimum credit score '+m.criteria.minCredit+'. References required: '+(m.criteria.refRequired?'Yes':'No')+'.'):'Criteria were not locked.',{size:10});
-  // checks table
-  section('Checks');
+  // §3 checks table
+  section('Checks','3');
   const colW=[142,66,117,CW-345];
   const cols=[M,M+150,M+222,M+345];
   need(20); doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor.apply(doc,MUT);
@@ -1395,16 +1403,19 @@ function buildPdf(m, JsPDF){
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc,INK); doc.text(b,cols[2],y+9); doc.text(c,cols[3],y+9);
     y+=rh; doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.5); doc.line(M,y-3,W-M,y-3);
   });
-  // LTB open data
+  // §4 LTB open data
   if(m.ltbAuto){
-    section('LTB open-data check');
+    section('LTB Open-Data Check','4');
     txt((m.ltbAuto.flagged?'Flagged: ':'No adverse match: ')+m.ltbAuto.summary,{size:9.5,bold:true,color:m.ltbAuto.flagged?COL.not_met:COL.met,gap:3});
     m.ltbAuto.matches.slice(0,10).forEach(x=>txt('File '+x.file+' | '+x.appType+' | '+x.date+' | '+(x.addressMatch?'name + address':'name only'),{size:9}));
     if(m.ltbAuto.flagged&&m.ltbRec){ txt(m.ltbRec.title+':',{size:9.5,bold:true}); m.ltbRec.steps.forEach(x=>txt('- '+x,{size:9})); }
   }
-  // authenticity
+
+  // ── PAGE 2: Evidence (sections 5–10) ───────────────────────────────────────
+  newPage(); pageLabel('Page 2 — Evidence');
+  // §5 credit authenticity
   if(m.docCheck || m.sourceVerified.method || m.attestation.given){
-    section('Credit report authenticity');
+    section('Credit Report Authenticity','5');
     if(m.docCheck){
       const TC={clean:COL.met,warn:COL.review,high:COL.not_met,unassessable:COL.incomplete};
       txt('Result: '+TIER_LABEL[m.docCheck.tier],{size:10.5,bold:true,color:TC[m.docCheck.tier]});
@@ -1414,31 +1425,54 @@ function buildPdf(m, JsPDF){
     txt(attestLine(m),{size:9.5});
     txt(verifyLine(m),{size:9.5,bold:true});
     txt('Automated checks for signs of editing. They are not proof of authenticity.',{size:8.5,color:MUT});
+  } else {
+    section('Credit Report Authenticity','5');
+    txt('No authenticity check run.',{size:9.5,color:MUT});
   }
+  // §6 employment preliminary
   if(m.prelim){
-    section('Employment: preliminary verification');
+    section('Employment: Preliminary Verification','6');
     txt(({pass:'Preliminary pass',fail:'Documents disagree',inconclusive:'Inconclusive: employer email recommended'})[m.prelim.result]+'  |  score '+m.prelim.score+'/100  |  '+(m.prelim.employer||'')+'  |  web search: '+(m.prelim.provider||'none'),{size:9.5,bold:true,color:m.prelim.result==='pass'?COL.met:m.prelim.result==='fail'?COL.not_met:COL.review});
     m.prelim.signals.forEach(c=>txt((c.st==='ok'?'[OK] ':c.st==='bad'?'[PROBLEM] ':c.st==='warn'?'[CHECK] ':'[TO DO] ')+c.txt,{size:9,color:c.st==='bad'?COL.not_met:INK}));
     txt('Based on payslip data and public web results about the employer. Not confirmed with the employer unless stated in the Employment check.',{size:8.5,color:MUT});
+  } else {
+    section('Employment: Preliminary Verification','6');
+    txt('Preliminary check not run.',{size:9.5,color:MUT});
   }
+  // §7 documents
   if(m.docs){
-    section('Documents read automatically');
+    section('Documents Read Automatically','7');
     m.docs.list.forEach(x=>{ txt(x.type+' ('+x.fileName+(x.method==='ocr'?', '+(x.ocrLabel||'OCR'):'')+')',{size:9.5,bold:true,gap:1}); txt(x.summary||'-',{size:8.5,color:MUT,gap:3}); });
     m.docs.manual.forEach(x=>txt('[MANUAL] '+x.section+': '+x.state,{size:9,bold:true,color:COL.review}));
     m.docs.checks.forEach(c=>txt((c.lvl==='ok'?'[OK] ':c.lvl==='bad'?'[PROBLEM] ':c.lvl==='warn'?'[CHECK] ':'[NOTE] ')+c.txt,{size:9,color:c.lvl==='bad'?COL.not_met:INK}));
     txt('ID photo compared by owner: '+(m.docs.confirm.idPhoto?'yes':'no')+'. Employer confirmed directly: '+(m.docs.confirm.employer?'yes':'no')+'. Software reading of applicant-supplied files; not proof of authenticity.',{size:8.5,color:MUT});
+  } else {
+    section('Documents Read Automatically','7');
+    txt('No documents uploaded.',{size:9.5,color:MUT});
   }
-  // consents
-  section('Consents recorded');
+  // §8 consents
+  section('Consents Recorded','8');
   m.consents.forEach(c=>{ txt(c.label+':  '+(c.given?'Given '+fmtDT(c.at):'Not given'),{size:9.5,color:c.given?INK:MUT}); });
-  if(m.applicantResponse){ section("Applicant's response to concerns"); txt(m.applicantResponse,{size:10}); }
-  section('Basis and handling');
+  // §9 applicant response
+  section("Applicant's Response to Concerns",'9');
+  txt(m.applicantResponse||'No response recorded.',{size:10,color:m.applicantResponse?INK:MUT});
+  // §10 basis and handling
+  section('Basis and Handling','10');
   txt('This result applies only the criteria locked before screening began, applied the same way to every applicant. Rent-to-income is shown for information and is not a cut-off. No information about protected grounds under the Ontario Human Rights Code was used. This report contains personal information: store it securely and delete it when no longer needed. It is not legal advice.',{size:9,color:MUT});
-  // footers
+
+  // ── FINAL PAGE: overflow lands here automatically via need() ───────────────
+  // (any section that overflows page 2 is pushed here by need(); if page 2 fits
+  //  everything, jsPDF simply won't add a third page and the footer loop below
+  //  handles however many pages were actually created)
+
+  // footers on every page
   const pages=doc.getNumberOfPages();
-  for(let p=1;p<=pages;p++){ doc.setPage(p); doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.5); doc.line(M,H-40,W-M,H-40);
+  const pageLabels=['Page 1 — Decision','Page 2 — Evidence'];
+  for(let p=1;p<=pages;p++){ doc.setPage(p);
+    doc.setDrawColor.apply(doc,LINE); doc.setLineWidth(0.5); doc.line(M,H-40,W-M,H-40);
     doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor.apply(doc,MUT);
-    doc.text(pdfClean('Confidential - contains personal information | Ref '+m.id),M,H-28); doc.text('Page '+p+' of '+pages,W-M,H-28,{align:'right'}); }
+    doc.text(pdfClean('Confidential — contains personal information | Ref '+m.id),M,H-28);
+    doc.text(pdfClean((p<=2?pageLabels[p-1]:'Page '+p+' — Continued')+' | '+p+' of '+pages),W-M,H-28,{align:'right'}); }
   return doc;
 }
 function downloadPdf(){
