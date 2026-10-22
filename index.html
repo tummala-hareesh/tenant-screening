@@ -497,7 +497,7 @@ function renderMain(){
 }
 function renderEditor(el){
   const s=cur(); const locked=!!s.criteria.lockedAt;
-  if(!ui.step) ui.step=smartStep(s); if(!ui.dim) ui.dim='identity';
+  if(!ui.step) ui.step=smartStep(s); if(!ui.dim) ui.dim='identity'; if(!DOC_ST.docTab) DOC_ST.docTab='all';
   el.innerHTML = `
   <div class="stepper noprint"><div id="stepper">${stepperHtml(s)}</div></div>
 
@@ -1456,8 +1456,10 @@ function downloadPdf(){
    pulls out the fields, cross-checks them, and proposes values for the checks. Nothing is uploaded anywhere.
    Only the extracted fields are kept, never the image or the full text. */
 const DOC_TYPES={id:'Photo ID',paystub:'Paystub',noa:'CRA Notice of Assessment',t4:'T4 slip',letter:'Employment letter',credit:'Credit report',bank:'Bank statement',lease:'Previous lease',osb:'OSB insolvency search result',police:'Police record check (applicant-supplied)',court:'Court records search result',other:'Unrecognized document'};
-const DOC_MEM={}; const DOC_ST={busy:false,applied:[],collapsed:false,cardCollapsed:new Set()}; const MAX_DOCS=10;
+const DOC_MEM={}; const DOC_ST={busy:false,applied:[],collapsed:false,cardCollapsed:new Set(),docTab:'all'}; const MAX_DOCS=10;
 function toggleDocCard(id){ DOC_ST.cardCollapsed.has(id)?DOC_ST.cardCollapsed.delete(id):DOC_ST.cardCollapsed.add(id); render(); }
+function goDocTab(t){ DOC_ST.docTab=t; render(); }
+function readDocFilesTab(files,type){ DOC_ST.docTab=type; readDocFiles(files,type); }
 const PADDLE_OCR_URL='https://cdn.jsdelivr.net/npm/@paddlejs-models/ocr@1.2.4/lib/index.js';
 const TESSERACT_OCR_URL='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 
@@ -1841,7 +1843,7 @@ async function readDocFiles(files,hintType){
   for(const file of toAdd){ try{ setBusy('Reading '+file.name+'...'); await readOne(s,file); }catch(e){ console.error(e); toast('Could not read '+file.name+(/Could not load/.test(e.message)?' (OCR-P and OCR-T both unavailable — check your connection)':'')); } }
   window._docHint=null; DOC_ST.busy=false; s.updatedAt=nowISO(); save(); render();
 }
-function onDocDrop(ev){ ev.preventDefault(); readDocFiles(ev.dataTransfer.files); }
+function onDocDrop(ev){ ev.preventDefault(); DOC_ST.docTab='all'; readDocFiles(ev.dataTransfer.files); }
 function removeDoc(id){ const s=cur(); if(!s) return; s.docs=(s.docs||[]).filter(d=>d.id!==id); delete DOC_MEM[id]; if(s.credit&&s.credit.autoFrom===id){ s.credit.score=''; s.credit.autoFrom=null; } s.updatedAt=nowISO(); save(); render(); }
 function reclassifyDoc(id,type){ const s=cur(); const d=(s.docs||[]).find(x=>x.id===id); const m=DOC_MEM[id]; if(!d) return; if(!m){ toast('Add the file again to change its type'); render(); return; }
   d.type=type; const ex=extractDoc(type,m.lines,d.fileName,m.csvRows); d.f=ex.f; d.notes=ex.notes; d.guess=ex.guess||{}; d.over={}; refreshNameHits(s); s.updatedAt=nowISO(); save(); render(); }
@@ -2198,6 +2200,28 @@ function docListState(s){
   });
 }
 const DOCLIST_TIER={req:'Needed',rec:'Recommended',opt:'Optional'};
+const DOC_SHORT={id:'Photo ID',credit:'Credit',paystub:'Paystubs',letter:'Emp. letter',bank:'Bank stmt',lease:'Prev. lease',noa:'NOA',t4:'T4',osb:'Insolvency',court:'Court',police:'Police'};
+function docNavHtml(s){
+  const rows=docListState(s); const cur=DOC_ST.docTab||'all';
+  const dot=(r)=>{
+    const c=r.have||r.altHave?(r.low?'var(--amber)':'var(--green)'):'var(--line)';
+    return `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c};flex:none;margin-right:3px"></span>`;
+  };
+  const btn=(r)=>`<button role="tab" class="${cur===r.type?'on':''}" onclick="goDocTab('${r.type}')">
+    ${dot(r)}${esc(DOC_SHORT[r.type]||r.name)}${r.count?`<span class="badge" style="margin:0 0 0 4px;padding:0 4px">${r.count}</span>`:''}
+  </button>`;
+  const need=rows.filter(r=>r.tier==='req');
+  const more=rows.filter(r=>r.tier!=='req');
+  const haveN=need.filter(r=>r.have||r.altHave).length;
+  return `<div style="margin:10px 0 4px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <span class="sec-no">Needed <span class="badge" style="margin-left:4px">${haveN}/${need.length}</span></span>
+    </div>
+    <div class="dimnav" role="tablist">${need.map(btn).join('')}</div>
+    <div style="margin-top:6px"><span class="sec-no">Also helpful</span></div>
+    <div class="dimnav" role="tablist">${more.map(btn).join('')}<button role="tab" class="${cur==='all'?'on':''}" onclick="goDocTab('all')">All</button></div>
+  </div>`;
+}
 function docChecklistHtml(s){
   const rows=docListState(s); const need=rows.filter(r=>r.tier==='req'); const more=rows.filter(r=>r.tier!=='req');
   const haveN=need.filter(r=>r.have||r.altHave).length;
@@ -2206,7 +2230,7 @@ function docChecklistHtml(s){
     const m={id:()=>f.expiry?'expires '+f.expiry:'', paystub:()=>{ const ds=D.map(d=>d.f.payDate).filter(Boolean).sort(); return ds.length?'latest '+ds[ds.length-1]:''; }, credit:()=>(f.score!=null?'score '+f.score:'')+(f.reportDate?' · '+f.reportDate:''), bank:()=>f.periodStart?f.periodStart+' to '+f.periodEnd:'', letter:()=>f.employer||'', lease:()=>f.end?'ends '+f.end:'', noa:()=>f.year?'tax year '+f.year:'', t4:()=>f.year?'tax year '+f.year:'', osb:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:''), court:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:''), police:()=>(RESULT_LABEL[f.result]||'')+(f.date?' · '+f.date:'')};
     const x=(m[r.type]||(()=>''))(); return n+(x||'added'); };
   const row=r=>{ const ok=r.have||r.altHave; const dot=`<span style="display:inline-flex;flex:none;width:18px;height:18px;border-radius:50%;border:2px solid ${ok?(r.low?'var(--amber)':'var(--green)'):'var(--line)'};background:${ok?(r.low?'var(--amber)':'var(--green)'):'#fff'};color:#fff;font-size:11px;font-weight:700;align-items:center;justify-content:center">${ok?(r.low?'!':'✓'):''}</span>`;
-    const uploadBtn=`<label style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;font-size:12px;font-weight:600;border:1px solid var(--ink);border-radius:3px;cursor:pointer;background:${ok?'transparent':'var(--ink)'};color:${ok?'var(--ink)':'#F8F5EF'};white-space:nowrap;flex-shrink:0">${ok?'Add more':'Upload'}<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,application/pdf,image/*" style="display:none" onchange="readDocFiles(this.files,'${r.type}');this.value=''"></label>`;
+    const uploadBtn=`<label style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;font-size:12px;font-weight:600;border:1px solid var(--ink);border-radius:3px;cursor:pointer;background:${ok?'transparent':'var(--ink)'};color:${ok?'var(--ink)':'#F8F5EF'};white-space:nowrap;flex-shrink:0">${ok?'Add more':'Upload'}<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,application/pdf,image/*" style="display:none" onchange="readDocFilesTab(this.files,'${r.type}');this.value=''"></label>`;
     return `<li style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)">${dot}<span style="${ok?'':'font-weight:600'};flex:1;min-width:0">${esc(short[r.type]||r.name)}</span><span class="hint" style="margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">${ok?(r.low?'check it · ':'')+esc(detail(r)):esc(r.feeds.map(k=>DIM_NAME[k]).join(', '))}</span>${uploadBtn}</li>`; };
   return `<div class="doclist" style="margin:10px 0 14px;border:1px solid var(--line);border-radius:4px;background:#fff;padding:10px 12px">
     <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px"><b>Must-have documents</b><span class="badge" style="margin:0">${haveN} of ${need.length} added</span></div>
@@ -2214,26 +2238,51 @@ function docChecklistHtml(s){
     <details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:var(--muted)">Also helpful (${more.length})</summary><ul style="list-style:none;margin:4px 0 0;padding:0">${more.map(r=>{ const ok=r.have||r.altHave; const dot=`<span style="display:inline-flex;flex:none;width:14px;height:14px;border-radius:50%;border:2px solid ${ok?'var(--green)':'var(--line)'};background:${ok?'var(--green)':'#fff'};color:#fff;font-size:9px;font-weight:700;align-items:center;justify-content:center">${ok?'✓':''}</span>`; return `<li style="display:flex;gap:8px;align-items:center;padding:4px 0">${dot}<span style="flex:1">${esc(short[r.type]||r.name)}</span><span class="hint" style="margin:0">${ok?esc(detail(r)):esc(r.feeds.map(k=>DIM_NAME[k]).join(', '))}</span></li>`; }).join('')}</ul></details></div>`;
 }
 function docsPanelHtml(s){
-  const D=s.docs||[]; const checks=docChecks(s).filter(c=>!c.ids.length||true); const est=incomeEstimate(s); const conf=s.docConfirm||{};
+  const D=s.docs||[]; const conf=s.docConfirm||{};
+  const checks=docChecks(s); const est=incomeEstimate(s);
   const needs=Object.keys(DIM_DOCS).filter(k=>dimBlocked(s,k));
+  const tab=DOC_ST.docTab||'all';
+
+  // which docs to show for active tab
+  const tabDocs=tab==='all'?D:D.filter(d=>d.type===tab);
+
+  // upload button for the active tab type
+  const tabInfo=DOC_LIST.find(r=>r.type===tab);
+  const uploadRow=tabInfo?`<label style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font-size:12px;font-weight:600;border:1px solid var(--ink);border-radius:3px;cursor:pointer;background:var(--ink);color:#F8F5EF">
+      Upload ${esc(DOC_SHORT[tab]||tabInfo.name)}<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,application/pdf,image/*" style="display:none" onchange="readDocFiles(this.files,'${tab}');this.value=''"></label>`:'';
+
+  // cross-checks scoped to the visible docs
+  const visibleIds=new Set(tabDocs.map(d=>d.id));
+  const visChecks=tab==='all'?checks:checks.filter(c=>!c.ids.length||c.ids.some(id=>visibleIds.has(id)));
+
+  // cards section
+  const cardsHtml=(()=>{
+    if(!D.length) return `<p class="hint" style="margin:12px 0">No documents uploaded yet — use the Upload button above or drag and drop a file here.</p>`;
+    if(!tabDocs.length) return `<p class="hint" style="margin:12px 0">No ${esc((tabInfo&&tabInfo.name)||tab)} uploaded yet.${tabInfo?` <label style="cursor:pointer;text-decoration:underline">Upload one now<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,application/pdf,image/*" style="display:none" onchange="readDocFiles(this.files,'${tab}');this.value=''"></label>`:''}</p>`;
+    const cards=tabDocs.map(d=>docCardHtml(s,d)).join('');
+    const xchk=visChecks.length?`<h4 style="margin:12px 0 6px;font-family:'Source Serif 4',serif">Cross-checks</h4>${marksHtml(visChecks.map(c=>({st:c.lvl,txt:c.txt})))}` :'';
+    const inc=(tab==='all'||['paystub','letter','noa','t4'].includes(tab))&&est?`<div class="note"><b>Income estimate:</b> ${fmtMoney(est.monthly)}/month (${esc(est.basis)})${s.rental.rent?'. Rent-to-income '+Math.round(Number(s.rental.rent)/est.monthly*100)+'% (information only)':''}.</div>`:'';
+    return cards+xchk+inc;
+  })();
+
   return `<div class="panel"><div class="sec-no">3 · Documents</div><h3>Read documents automatically</h3>
     ${privacyBannerHtml()}
-    <p class="hint">Upload each document using the button on its row. Photos and scanned PDFs are read with OCR in-browser — nothing leaves your device.</p>
-    ${docChecklistHtml(s)}
-    <div ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="border:1px dashed var(--line);border-radius:4px;padding:10px 14px;font-size:13px;color:var(--muted);text-align:center;margin-top:4px">Or drag &amp; drop any file here</div>
+    <p class="hint">Upload each document using the button on its tab. Photos and scanned PDFs are read with OCR in-browser — nothing leaves your device.</p>
+    ${docNavHtml(s)}
+    <div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;flex-wrap:wrap">
+      ${tab!=='all'?uploadRow:''}
+      <div ondragover="event.preventDefault()" ondrop="onDocDrop(event)" style="flex:1;min-width:160px;border:1px dashed var(--line);border-radius:4px;padding:6px 12px;font-size:13px;color:var(--muted);text-align:center">Drag &amp; drop here</div>
+      <span class="badge" style="white-space:nowrap">${D.length}/${MAX_DOCS} docs</span>
+    </div>
     <div id="docBusy" class="hint" style="min-height:18px">${DOC_ST.busy?'Reading...':''}</div>
     ${needs.length?`<div class="note" style="border-left:4px solid var(--red)"><b>Manual verification needed:</b> ${needs.map(k=>DIM_NAME[k]).join(', ')}. Confidence is under ${LOW_CONF}% for at least one document. Verify or override in the section itself (4 · Checks).</div>`:''}
-    ${(()=>{ if(!D.length) return '';
-      const hdr=`<div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 4px"><b style="font-size:13.5px">Analysed documents (${D.length}/${MAX_DOCS})</b><button class="small" onclick="DOC_ST.collapsed=!DOC_ST.collapsed;render()">${DOC_ST.collapsed?'Expand ▾':'Collapse ▴'}</button></div>`;
-      if(DOC_ST.collapsed) return hdr;
-      const cards=D.map(d=>docCardHtml(s,d)).join('');
-      const xchk=checks.length?`<h4 style="margin:12px 0 6px;font-family:'Source Serif 4',serif">Cross-checks</h4>${marksHtml(checks.map(c=>({st:c.lvl,txt:c.txt})))}` :'';
-      const inc=est?`<div class="note"><b>Income estimate:</b> ${fmtMoney(est.monthly)}/month (${esc(est.basis)})${s.rental.rent?'. Rent-to-income '+Math.round(Number(s.rental.rent)/est.monthly*100)+'% (information only)':''}.</div>`:'';
-      return hdr+cards+xchk+inc; })()}
-    ${D.length?`<div class="consent" style="margin-top:10px"><input type="checkbox" ${conf.idPhoto?'checked':''} onchange="setvR('docConfirm.idPhoto',this.checked)"><span>I compared the ID photo with the applicant (in person or on video) and it matches.</span></div>
+    ${cardsHtml}
+    ${D.length?`<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
+      <div class="consent"><input type="checkbox" ${conf.idPhoto?'checked':''} onchange="setvR('docConfirm.idPhoto',this.checked)"><span>I compared the ID photo with the applicant (in person or on video) and it matches.</span></div>
       <p class="hint">Documents show what the applicant provided. ID photo comparison is your own verification step — the app won't mark Identity clear without it.</p>
-      <div class="actions noprint"><button class="primary" onclick="applyDocs()">Apply to the checks below</button></div>`:''}
+      <div class="actions noprint"><button class="primary" onclick="applyDocs()">Apply to the checks below</button></div></div>`:''}
     ${DOC_ST.applied.length?`<div class="note"><b>Applied:</b><ul style="margin:4px 0 0;padding-left:18px">${DOC_ST.applied.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;color:var(--muted)">Document checklist</summary>${docChecklistHtml(s)}</details>
   </div>`;
 }
 
