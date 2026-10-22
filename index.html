@@ -1456,7 +1456,8 @@ function downloadPdf(){
    pulls out the fields, cross-checks them, and proposes values for the checks. Nothing is uploaded anywhere.
    Only the extracted fields are kept, never the image or the full text. */
 const DOC_TYPES={id:'Photo ID',paystub:'Paystub',noa:'CRA Notice of Assessment',t4:'T4 slip',letter:'Employment letter',credit:'Credit report',bank:'Bank statement',lease:'Previous lease',osb:'OSB insolvency search result',police:'Police record check (applicant-supplied)',court:'Court records search result',other:'Unrecognized document'};
-const DOC_MEM={}; const DOC_ST={busy:false,applied:[],collapsed:false}; const MAX_DOCS=10;
+const DOC_MEM={}; const DOC_ST={busy:false,applied:[],collapsed:false,cardCollapsed:new Set()}; const MAX_DOCS=10;
+function toggleDocCard(id){ DOC_ST.cardCollapsed.has(id)?DOC_ST.cardCollapsed.delete(id):DOC_ST.cardCollapsed.add(id); render(); }
 const PADDLE_OCR_URL='https://cdn.jsdelivr.net/npm/@paddlejs-models/ocr@1.2.4/lib/index.js';
 const TESSERACT_OCR_URL='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 
@@ -2149,12 +2150,28 @@ function docCardHtml(s,d){
     return `<div><div class="hint" style="margin:0 0 2px;text-transform:uppercase;font-size:11px;letter-spacing:.04em;display:flex;justify-content:space-between;gap:6px"><span>${esc(sp.l)}${sp.c?' *':''}</span><span>${c!=null?`<b style="color:${confColor(c)}">${c}%</b>`:''}</span></div>${input}${edited?`<div class="hint" style="margin:2px 0 0;color:var(--amber)">Edited by you (was ${esc(String(edited.from===''?'blank':edited.from))}) <a href="#" onclick="resetDocField('${d.id}','${sp.k}');return false">undo</a></div>`:''}</div>`;
   }).join('');
   const marks=docChecks(s).filter(c=>c.ids.includes(d.id)).map(c=>({st:c.lvl,txt:c.txt}));
-  return `<div class="dim" style="${low?'border-color:var(--red)':''}"><div class="dim-h"><div><b>${esc(DOC_TYPES[d.type])}</b> ${d.type==='other'?'':confChip(sc)}<span class="badge">${esc(d.fileName)} · ${d.method==='ocr'?'read by '+(d.ocrLabel||'OCR')+' (engine '+(d.conf!=null?d.conf:'?')+'%)':'text read'}</span></div>
-      <div class="actions noprint" style="display:flex;gap:6px;align-items:center"><select style="width:auto" onchange="reclassifyDoc('${d.id}',this.value)">${Object.keys(DOC_TYPES).map(k=>`<option value="${k}" ${d.type===k?'selected':''}>${esc(DOC_TYPES[k])}</option>`).join('')}</select><button class="small danger" onclick="removeDoc('${d.id}')">Remove</button></div></div>
+  const coll=DOC_ST.cardCollapsed.has(d.id);
+  const alertDot=low||marks.some(m=>m.st==='bad')||marks.some(m=>m.st==='warn');
+  return `<div class="dim" style="${low?'border-color:var(--red)':''}">
+    <div class="dim-h">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0">
+        <b>${esc(DOC_TYPES[d.type])}</b> ${d.type==='other'?'':confChip(sc)}
+        <span class="badge" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.fileName)} · ${d.method==='ocr'?'read by '+(d.ocrLabel||'OCR')+' (engine '+(d.conf!=null?d.conf:'?')+'%)':'text read'}</span>
+        ${coll&&alertDot?`<span style="color:var(--amber);font-size:12px">⚠</span>`:''}
+      </div>
+      <div class="actions noprint" style="display:flex;gap:6px;align-items:center">
+        <button class="small" onclick="toggleDocCard('${d.id}')">${coll?'Expand ▾':'Collapse ▴'}</button>
+        <select style="width:auto" onchange="reclassifyDoc('${d.id}',this.value)">${Object.keys(DOC_TYPES).map(k=>`<option value="${k}" ${d.type===k?'selected':''}>${esc(DOC_TYPES[k])}</option>`).join('')}</select>
+        <button class="small danger" onclick="removeDoc('${d.id}')">Remove</button>
+      </div>
+    </div>
+    ${coll?'':`
     ${low?`<div class="note" style="border-left:4px solid var(--red)"><b>Low confidence (${sc}%).</b> Compare each value with the original and fix any that are wrong. Then mark the section manually verified${feeds.length?' ('+feeds.map(k=>DIM_NAME[k]).join(', ')+')':''}.</div>`:''}
     ${spec.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 14px;margin-top:8px">${fields}</div><div class="hint" style="margin-top:6px">* critical field. Percentages show how sure the reader is of each value. Type over a value to correct it; it is then flagged as an owner edit.</div>`:''}
     ${marksHtml(marks)}
-    ${d.auth&&d.auth.flags.length?`<div class="hint">File check: ${d.auth.flags.map(x=>esc(x.title)).join('; ')}</div>`:''}</div>`;
+    ${d.auth&&d.auth.flags.length?`<div class="hint">File check: ${d.auth.flags.map(x=>esc(x.title)).join('; ')}</div>`:''}
+    `}
+  </div>`;
 }
 
 /* ---------- Checklist of documents to collect ---------- */
